@@ -1,47 +1,109 @@
 
-# PriceScope — Estructura del repositorio
+# PriceScope — Arquitectura del sistema
 
-## Objetivo
+## 1. Objetivo
 
-Explicar la responsabilidad de cada carpeta y evitar que el equipo
-duplique componentes o coloque archivos en lugares incorrectos.
+PriceScope es una plataforma de inteligencia de mercado que busca
+recopilar, organizar y analizar precios publicados en comercios
+electrónicos para estudiar su evolución y comparar precios entre
+productos, tiendas y monedas.
 
-## Raíz del proyecto
+La arquitectura debe permitir conservar el historial de precios,
+incorporar nuevas fuentes de datos y ofrecer información útil
+mediante una API y una interfaz web.
 
-- `README.md`: presentación del proyecto e instrucciones iniciales.
-- `.gitignore`: archivos que Git no debe versionar.
-- `.env.example`: ejemplo de variables necesarias, sin secretos reales.
-- `backend/`: API, lógica de negocio, persistencia y pruebas del backend.
-- `docs/`: arquitectura, datos, decisiones y planificación.
-- `frontend/`: interfaz web existente, mantenida por su responsable.
+## 2. Componentes principales
 
-## Backend
+### Frontend
 
-- `pyproject.toml`: configuración del proyecto Python y sus dependencias.
-- `alembic.ini`: configuración de Alembic.
-- `alembic/versions/`: historial de migraciones de base de datos.
-- `app/main.py`: creación de la aplicación FastAPI.
-- `app/core/`: configuración y componentes transversales.
-- `app/db/`: conexión, sesiones y registro de modelos.
-- `app/models/`: modelos de persistencia.
-- `app/schemas/`: esquemas de entrada y salida de la API.
-- `app/api/v1/`: rutas de la primera versión de la API.
-- `app/services/`: lógica de negocio.
-- `app/scrapers/`: extracción y adaptación de fuentes de datos.
-- `app/tests/`: pruebas cercanas a los módulos de aplicación.
-- `tests/`: pruebas generales o de integración.
+Responsable de presentar la información al usuario.
 
-## Convenciones
+Funciones previstas:
+- Mostrar productos y tiendas.
+- Consultar la evolución histórica de precios.
+- Presentar indicadores y comparaciones.
+- Mostrar alertas cuando se cumplan las condiciones configuradas.
 
-- Los modelos representan la estructura de persistencia.
-- Los esquemas validan los datos de entrada y salida.
-- Los servicios implementan las reglas de negocio.
-- Las rutas HTTP coordinan las solicitudes y respuestas.
-- Los scrapers obtienen datos de fuentes externas.
-- Las migraciones registran los cambios del esquema.
+El frontend existente en el repositorio debe revisarse antes de
+definir nuevas carpetas o implementar componentes duplicados.
 
-## Mantenimiento
+### Backend
 
-La estructura documentada debe reflejar el repositorio real.
-No se crearán carpetas nuevas solo por anticipación: cada módulo
-debe tener una responsabilidad definida y un uso previsto.
+El backend se desarrollará con Python y FastAPI, sujeto a la
+confirmación del stack acordado por el equipo.
+
+Responsabilidades:
+- Exponer endpoints HTTP.
+- Validar entradas y salidas.
+- Aplicar reglas de negocio.
+- Consultar y modificar la base de datos.
+- Coordinar la extracción y normalización de precios.
+- Facilitar los datos que consume el frontend.
+
+### Base de datos
+
+PostgreSQL alojado en Neon será la base de datos propuesta.
+
+Debe almacenar:
+- Tiendas y categorías.
+- Productos publicados por cada tienda.
+- Productos comunes usados para comparar artículos equivalentes.
+- Observaciones históricas de precios.
+- Tipos de cambio.
+- Configuraciones de alertas.
+
+### Extracción de datos
+
+Los componentes de scraping recopilarán información de fuentes
+públicas o autorizadas de comercio electrónico.
+
+El proceso deberá:
+1. Consultar la fuente.
+2. Extraer la información disponible.
+3. Normalizar nombres, precios y monedas.
+4. Validar los datos.
+5. Guardar nuevas observaciones sin borrar el historial.
+
+Cada fuente puede requerir un adaptador específico.
+
+## 3. Flujo general de información
+
+1. Un scraper obtiene los datos publicados por una tienda.
+2. El backend normaliza y valida el resultado.
+3. Se identifica el producto de la tienda y, cuando sea posible,
+   se relaciona con un producto común del catálogo.
+4. Se registra una observación de precio con su fecha y moneda.
+5. Los servicios de análisis consultan el historial.
+6. La API entrega los resultados al frontend.
+
+## 4. Tecnologías propuestas
+
+- Python: lenguaje del backend y de los procesos de extracción.
+- FastAPI: API HTTP.
+- PostgreSQL / Neon: almacenamiento relacional.
+- SQLAlchemy: acceso a datos desde Python.
+- Alembic: migraciones del esquema.
+- Pydantic: validación de datos.
+- Pytest: pruebas automatizadas.
+- Git y GitHub: control de versiones y gestión del trabajo.
+
+Estas tecnologías deben confirmarse con el equipo antes de
+considerarlas decisiones definitivas.
+
+## 5. Principios de diseño
+
+- Mantener el historial de precios.
+- Separar la extracción, la lógica de negocio y la API.
+- Evitar duplicados mediante identificadores y restricciones.
+- No almacenar secretos en el repositorio.
+- Validar y probar antes de integrar cambios.
+- Documentar las decisiones que afecten a otros módulos.
+
+## 6. Aspectos pendientes
+
+- Confirmar el stack definitivo.
+- Confirmar el contrato entre frontend y backend.
+- Definir cómo se asocia cada precio con el tipo de cambio aplicable.
+- Definir la frecuencia y las fuentes de extracción.
+- Establecer las reglas para reconocer productos equivalentes.
+- Confirmar las métricas que entran en el MVP.

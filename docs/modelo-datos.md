@@ -98,3 +98,64 @@ muchos productos, pero cada publicación pertenece a una tienda.
 - Definir restricciones para evitar observaciones duplicadas.
 - Definir qué campos son obligatorios para cada fuente.
 - Revisar si las alertas necesitan usuario, canal y estado de entrega.
+
+erDiagram
+    STORES {
+        int id PK
+        string name
+        string base_url
+        string country
+        boolean is_active
+        datetime created_at
+    }
+
+    CATEGORIES {
+        int id PK
+        string name
+    }
+
+    CANONICAL_PRODUCTS {
+        int id PK
+        string name
+        string brand
+        string model
+    }
+
+    STORE_PRODUCTS {
+        int id PK
+        int store_id FK
+        int category_id FK
+        int canonical_product_id FK
+        string external_id
+        string product_url
+        string product_name
+    }
+
+    PRICE_OBSERVATIONS {
+        int id PK
+        int store_product_id FK
+        decimal price
+        string currency
+        datetime observed_at
+    }
+
+    EXCHANGE_RATES {
+        int id PK
+        string base_currency
+        string quote_currency
+        decimal rate
+        datetime observed_at
+    }
+
+    ALERTS {
+        int id PK
+        int canonical_product_id FK
+        decimal threshold
+        boolean is_active
+    }
+
+    STORES ||--o{ STORE_PRODUCTS : publica
+    CATEGORIES ||--o{ STORE_PRODUCTS : clasifica
+    CANONICAL_PRODUCTS o|--o{ STORE_PRODUCTS : relaciona
+    STORE_PRODUCTS ||--o{ PRICE_OBSERVATIONS : registra
+    CANONICAL_PRODUCTS ||--o{ ALERTS : configura
