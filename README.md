@@ -28,7 +28,7 @@ Desarrollar una plataforma que permita monitorear precios, comparar productos eq
 - **Extracción de datos:** Python, Playwright o BeautifulSoup.
 - **Backend:** por definir con el equipo.
 - **Base de datos:** PostgreSQL.
-- **Frontend:** por definir con el equipo.
+- **Frontend:** React + TypeScript + Vite + Tailwind CSS (carpeta `frontend/`).
 - **Procesamiento y programación:** tareas automatizadas.
 - **Visualización:** gráficos e indicadores interactivos.
 
