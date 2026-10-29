@@ -1,0 +1,5 @@
+export type { Store } from './store'
+export type { Category } from './category'
+export type { Product } from './product'
+export type { PriceObservation } from './price'
+export type { ExchangeRate } from './exchangeRate'

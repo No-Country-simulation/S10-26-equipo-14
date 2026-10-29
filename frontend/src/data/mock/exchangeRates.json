@@ -1,0 +1,30 @@
+[
+  {
+    "id": 1,
+    "pair": "USD/ARS",
+    "rate": 1250.5,
+    "source": "oficial",
+    "recorded_at": "2026-01-20T09:00:00Z"
+  },
+  {
+    "id": 2,
+    "pair": "USD/ARS",
+    "rate": 1420.0,
+    "source": "blue",
+    "recorded_at": "2026-01-20T09:00:00Z"
+  },
+  {
+    "id": 3,
+    "pair": "USD/ARS",
+    "rate": 1250.5,
+    "source": "oficial",
+    "recorded_at": "2026-01-15T09:00:00Z"
+  },
+  {
+    "id": 4,
+    "pair": "USD/ARS",
+    "rate": 1390.0,
+    "source": "blue",
+    "recorded_at": "2026-01-15T09:00:00Z"
+  }
+]
