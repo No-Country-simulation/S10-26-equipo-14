@@ -1,0 +1,74 @@
+[
+  {
+    "id": 1,
+    "store_id": 1,
+    "category_id": 1,
+    "name": "Arroz blanco 1 kg",
+    "sku": "ARZ-001",
+    "url": "https://www.tiendaa.com/productos/arroz-blanco-1kg",
+    "is_active": true
+  },
+  {
+    "id": 2,
+    "store_id": 1,
+    "category_id": 1,
+    "name": "Azúcar 1 kg",
+    "sku": "AZU-001",
+    "url": "https://www.tiendaa.com/productos/azucar-1kg",
+    "is_active": true
+  },
+  {
+    "id": 3,
+    "store_id": 2,
+    "category_id": 1,
+    "name": "Arroz blanco 1 kg",
+    "sku": "ARZ-001",
+    "url": "https://www.tiendab.com/productos/arroz-blanco-1kg",
+    "is_active": true
+  },
+  {
+    "id": 4,
+    "store_id": 2,
+    "category_id": 1,
+    "name": "Azúcar 1 kg",
+    "sku": "AZU-001",
+    "url": "https://www.tiendab.com/productos/azucar-1kg",
+    "is_active": true
+  },
+  {
+    "id": 5,
+    "store_id": 3,
+    "category_id": 1,
+    "name": "Arroz blanco 1 kg",
+    "sku": "ARZ-001",
+    "url": "https://www.tiendac.com/productos/arroz-blanco-1kg",
+    "is_active": true
+  },
+  {
+    "id": 6,
+    "store_id": 3,
+    "category_id": 1,
+    "name": "Azúcar 1 kg",
+    "sku": "AZU-001",
+    "url": "https://www.tiendac.com/productos/azucar-1kg",
+    "is_active": true
+  },
+  {
+    "id": 7,
+    "store_id": 1,
+    "category_id": 2,
+    "name": "Smartphone 128 GB",
+    "sku": "SMP-128",
+    "url": "https://www.tiendaa.com/productos/smartphone-128gb",
+    "is_active": true
+  },
+  {
+    "id": 8,
+    "store_id": 2,
+    "category_id": 2,
+    "name": "Smartphone 128 GB",
+    "sku": "SMP-128",
+    "url": "https://www.tiendab.com/productos/smartphone-128gb",
+    "is_active": true
+  }
+]
