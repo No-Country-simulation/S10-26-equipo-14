@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "name": "Alimentos",
+    "slug": "alimentos",
+    "description": "Productos de la canasta básica alimentaria"
+  },
+  {
+    "id": 2,
+    "name": "Electrónica",
+    "slug": "electronica",
+    "description": "Electrodomésticos y productos de tecnología"
+  },
+  {
+    "id": 3,
+    "name": "Ropa",
+    "slug": "ropa",
+    "description": "Indumentaria y calzado"
+  },
+  {
+    "id": 4,
+    "name": "Limpieza",
+    "slug": "limpieza",
+    "description": "Productos de higiene y limpieza del hogar"
+  }
+]

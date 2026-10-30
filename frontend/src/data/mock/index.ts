@@ -1,0 +1,11 @@
+export type { Store } from '../../types/store'
+export type { Category } from '../../types/category'
+export type { Product } from '../../types/product'
+export type { PriceObservation } from '../../types/price'
+export type { ExchangeRate } from '../../types/exchangeRate'
+
+export { default as stores } from './stores.json'
+export { default as categories } from './categories.json'
+export { default as products } from './products.json'
+export { default as prices } from './prices.json'
+export { default as exchangeRates } from './exchangeRates.json'

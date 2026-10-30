@@ -1,0 +1,66 @@
+[
+  {
+    "id": 1,
+    "product_id": 1,
+    "store_id": 1,
+    "amount": 1250,
+    "currency": "ARS",
+    "observed_at": "2026-01-15T10:00:00Z"
+  },
+  {
+    "id": 2,
+    "product_id": 2,
+    "store_id": 1,
+    "amount": 980,
+    "currency": "ARS",
+    "observed_at": "2026-01-15T10:00:00Z"
+  },
+  {
+    "id": 3,
+    "product_id": 3,
+    "store_id": 2,
+    "amount": 1320,
+    "currency": "ARS",
+    "observed_at": "2026-01-15T11:00:00Z"
+  },
+  {
+    "id": 4,
+    "product_id": 4,
+    "store_id": 2,
+    "amount": 1040,
+    "currency": "ARS",
+    "observed_at": "2026-01-15T11:00:00Z"
+  },
+  {
+    "id": 5,
+    "product_id": 5,
+    "store_id": 3,
+    "amount": 1280,
+    "currency": "ARS",
+    "observed_at": "2026-01-15T12:00:00Z"
+  },
+  {
+    "id": 6,
+    "product_id": 6,
+    "store_id": 3,
+    "amount": 990,
+    "currency": "ARS",
+    "observed_at": "2026-01-15T12:00:00Z"
+  },
+  {
+    "id": 7,
+    "product_id": 1,
+    "store_id": 1,
+    "amount": 1300,
+    "currency": "ARS",
+    "observed_at": "2026-01-20T10:00:00Z"
+  },
+  {
+    "id": 8,
+    "product_id": 2,
+    "store_id": 1,
+    "amount": 1020,
+    "currency": "ARS",
+    "observed_at": "2026-01-20T10:00:00Z"
+  }
+]

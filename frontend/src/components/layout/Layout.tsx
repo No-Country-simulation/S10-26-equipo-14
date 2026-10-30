@@ -30,6 +30,9 @@ export default function Layout() {
             <NavLink to="/about" className={navLinkClass}>
               Acerca de
             </NavLink>
+            <NavLink to="/demo" className={navLinkClass}>
+              Demo
+            </NavLink>
           </nav>
         </div>
       </header>
