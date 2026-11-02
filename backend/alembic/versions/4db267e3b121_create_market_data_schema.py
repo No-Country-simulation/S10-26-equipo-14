@@ -33,8 +33,8 @@ def upgrade() -> None:
         sa.Column("product_id", sa.BigInteger()), sa.Column("external_id", sa.String(180)),
         sa.Column("product_url", sa.Text(), nullable=False), sa.Column("product_name", sa.String(300), nullable=False),
         sa.Column("currency", sa.String(3), server_default="ARS", nullable=False),
-        sa.ForeignKeyConstraint(["product_id"], ["products.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["store_id"], ["stores.id"], ondelete="CASCADE"), sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(["product_id"], ["products.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["store_id"], ["stores.id"], ondelete="RESTRICT"), sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("store_id", "external_id", name="uq_store_products_store_external"))
     op.create_index("ix_store_products_store_id", "store_products", ["store_id"])
     op.create_index("ix_store_products_product_id", "store_products", ["product_id"])
@@ -43,7 +43,7 @@ def upgrade() -> None:
         sa.Column("amount", sa.Numeric(14, 2), nullable=False), sa.Column("currency", sa.String(3), server_default="ARS", nullable=False),
         sa.Column("observed_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.ForeignKeyConstraint(["store_product_id"], ["store_products.id"], ondelete="CASCADE"), sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(["store_product_id"], ["store_products.id"], ondelete="RESTRICT"), sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("store_product_id", "observed_at", name="uq_price_observations_product_time"),
         sa.CheckConstraint("amount > 0", name="ck_price_observations_amount_positive"))
     op.create_index("ix_price_observations_product_observed", "price_observations", ["store_product_id", "observed_at"])

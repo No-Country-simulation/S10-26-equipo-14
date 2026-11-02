@@ -34,4 +34,12 @@ class Store(Base):
         nullable=False,
         server_default=func.now(),
     )
-    products: Mapped[list["StoreProduct"]] = relationship(back_populates="store")
+    # PostgreSQL is the authority for RESTRICT; ORM must not null store_id.
+    products: Mapped[list["StoreProduct"]] = relationship(
+        back_populates="store",
+        passive_deletes="all",
+    )
+
+    def deactivate(self) -> None:
+        """Apply the supported logical removal policy for a store."""
+        self.is_active = False

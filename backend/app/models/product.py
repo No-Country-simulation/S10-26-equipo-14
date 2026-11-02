@@ -16,4 +16,8 @@ class Product(Base):
     description: Mapped[str | None] = mapped_column(Text)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"), index=True)
     category: Mapped["Category | None"] = relationship(back_populates="products")
-    store_products: Mapped[list["StoreProduct"]] = relationship(back_populates="product")
+    # Keep publications linked to their canonical product until explicitly relinked.
+    store_products: Mapped[list["StoreProduct"]] = relationship(
+        back_populates="product",
+        passive_deletes="all",
+    )
