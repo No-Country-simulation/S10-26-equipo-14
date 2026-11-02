@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "PriceScope API"
-    database_url: str = "postgresql://localhost/pricescope"
+    database_url: str
 
 
 @lru_cache
