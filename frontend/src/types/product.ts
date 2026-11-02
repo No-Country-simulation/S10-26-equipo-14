@@ -1,15 +1,10 @@
-/**
- * Interfaz Product — Modelo de dominio del backend.
- *
- * PENDIENTE DE CONFIRMAR con el backend (backend/app/models/product.py vacío).
- * Definición preliminar basada en docs/arquitectura.md.
- */
+/** Canonical product shared across store listings. */
 export interface Product {
   id: number
-  store_id: number
-  category_id: number | null
   name: string
-  sku: string | null
-  url: string | null
-  is_active: boolean
+  brand: string | null
+  model: string | null
+  description: string | null
+  barcode: string | null
+  category_id: number | null
 }

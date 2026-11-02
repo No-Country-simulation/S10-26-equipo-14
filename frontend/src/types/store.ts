@@ -10,5 +10,5 @@ export interface Store {
   base_url: string
   country: string | null
   is_active: boolean
-  created_at: string // ISO 8601 (DateTime con timezone)
+  created_at: string // ISO 8601; PostgreSQL TIMESTAMPTZ
 }

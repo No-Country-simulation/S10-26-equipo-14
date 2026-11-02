@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
@@ -11,6 +13,7 @@ class StoreOut(ReadModel):
     base_url: str
     country: str | None
     is_active: bool
+    created_at: datetime
 
 
 class CategoryOut(ReadModel):
@@ -24,12 +27,15 @@ class ProductOut(ReadModel):
     name: str
     brand: str | None
     model: str | None
+    description: str | None
+    barcode: str | None
     category_id: int | None
 
 
 class StoreProductCreate(BaseModel):
     store_id: int
     product_id: int | None = None
+    category_id: int | None = None
     external_id: str | None = Field(default=None, max_length=180)
     product_url: HttpUrl
     product_name: str = Field(min_length=1, max_length=300)
@@ -40,6 +46,7 @@ class StoreProductOut(ReadModel):
     id: int
     store_id: int
     product_id: int | None
+    category_id: int | None
     external_id: str | None
     product_url: str
     product_name: str
