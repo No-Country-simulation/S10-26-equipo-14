@@ -17,3 +17,4 @@ class Category(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     slug: Mapped[str] = mapped_column(String(140), nullable=False)
     products: Mapped[list["Product"]] = relationship(back_populates="category")
+    store_products: Mapped[list["StoreProduct"]] = relationship(back_populates="category")

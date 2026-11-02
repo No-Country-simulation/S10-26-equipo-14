@@ -1,5 +1,11 @@
 # Auditoría previa a la migración de Neon
 
+> **Actualización 2026-11-02:** La conclusión histórica de abajo se refería
+> únicamente a `4db267e3b121` y quedó supersedida por los campos de aceptación
+> agregados en `d8f31a9c0e42`. La nueva cabeza está validada en PostgreSQL local
+> aislado; todavía no se ha vuelto a consultar ni modificar Neon. No se debe
+> interpretar la conclusión histórica como autorización para migrar.
+
 **Fecha:** 2026-11-02
 **Rama:** `feature/ps-mvp-backend`
 **Revisión pendiente:** `4db267e3b121`

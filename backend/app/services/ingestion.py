@@ -17,6 +17,7 @@ class RawQuote:
     source: str
     base_currency: str = "USD"
     quote_currency: str = "ARS"
+    rate_side: str = "reference"
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,9 @@ class RawPrice:
     amount: Decimal
     observed_at: datetime
     currency: str = "ARS"
+    source_url: str | None = None
+    is_available: bool | None = None
+    promotional_price: Decimal | None = None
 
 
 class ExchangeRateProvider(Protocol):
@@ -55,7 +59,9 @@ def aware_utc(value: datetime) -> datetime:
 
 
 def persist_quote(session: Session, quote: RawQuote) -> ExchangeRate:
-    row = ExchangeRate(source=quote.source, rate_type=quote.rate_type,
+    if quote.rate_side not in {"reference", "buy", "sell"}:
+        raise ValueError("rate_side debe ser reference, buy o sell")
+    row = ExchangeRate(source=quote.source, rate_type=quote.rate_type, rate_side=quote.rate_side,
         base_currency=quote.base_currency.upper(), quote_currency=quote.quote_currency.upper(),
         rate=normalize_decimal(quote.rate), observed_at=aware_utc(quote.observed_at))
     session.add(row)
@@ -63,8 +69,19 @@ def persist_quote(session: Session, quote: RawQuote) -> ExchangeRate:
 
 
 def persist_price(session: Session, store_product_id: int, price: RawPrice) -> PriceObservation:
-    row = PriceObservation(store_product_id=store_product_id, amount=normalize_decimal(price.amount),
-        currency=price.currency.upper(), observed_at=aware_utc(price.observed_at))
+    promotional_price = (
+        normalize_decimal(price.promotional_price)
+        if price.promotional_price is not None else None
+    )
+    row = PriceObservation(
+        store_product_id=store_product_id,
+        amount=normalize_decimal(price.amount),
+        promotional_price=promotional_price,
+        currency=price.currency.upper(),
+        source_url=price.source_url,
+        is_available=price.is_available,
+        observed_at=aware_utc(price.observed_at),
+    )
     session.add(row)
     return row
 

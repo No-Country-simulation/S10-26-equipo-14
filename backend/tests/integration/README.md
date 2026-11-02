@@ -16,6 +16,6 @@ python -m pytest -q
 Remove-Item Env:PRICESCOPE_TEST_DATABASE_URL
 ```
 
-The integration fixture checks the database name and current schema before migration, accepts only an empty database, the known `cb0deba93496` state, or the already migrated test schema, then runs Alembic and `alembic check`. It does not drop tables or databases. Test data is rolled back after each test.
+The integration fixture checks the database name and current schema before migration, accepts only an empty database, the known `cb0deba93496` state, the prior `4db267e3b121` schema, or the current `d8f31a9c0e42` test schema, then runs Alembic and `alembic check`. It does not drop tables or databases. Test data is rolled back after each test.
 
 Without `PRICESCOPE_TEST_DATABASE_URL`, PostgreSQL tests are skipped. Unit/API tests use SQLite in memory and force `DATABASE_URL=sqlite://` in the test process.

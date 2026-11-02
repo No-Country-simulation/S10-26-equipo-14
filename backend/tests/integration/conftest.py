@@ -19,6 +19,7 @@ EXPECTED_TABLES = {
     "exchange_rates",
     "extraction_runs",
 }
+CURRENT_HEAD = "d8f31a9c0e42"
 
 
 def _validated_test_url():
@@ -54,6 +55,7 @@ def postgres_engine():
             not tables
             or (tables == {"alembic_version", "stores"} and versions == ["cb0deba93496"])
             or (tables == EXPECTED_TABLES and versions == ["4db267e3b121"])
+            or (tables == EXPECTED_TABLES and versions == [CURRENT_HEAD])
         )
         if not allowed_states:
             pytest.fail("Test database contains an unexpected schema; refusing to migrate it")

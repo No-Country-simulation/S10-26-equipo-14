@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError, InvalidRequestError
 
-from app.models import PriceObservation, Product, Store, StoreProduct
+from app.models import Category, PriceObservation, Product, Store, StoreProduct
 
 pytestmark = pytest.mark.integration
 
@@ -54,6 +54,58 @@ def test_postgres_schema_contains_all_tables_and_restrict_fks(postgres_engine):
     for (table, column), ondelete in expected.items():
         fk = next(fk for fk in inspector.get_foreign_keys(table) if fk["constrained_columns"] == [column])
         assert fk["options"]["ondelete"].upper() == ondelete
+
+    assert "barcode" in {column["name"] for column in inspector.get_columns("products")}
+    assert "category_id" in {column["name"] for column in inspector.get_columns("store_products")}
+    assert {"promotional_price", "source_url", "is_available"} <= {
+        column["name"] for column in inspector.get_columns("price_observations")
+    }
+    assert "rate_side" in {column["name"] for column in inspector.get_columns("exchange_rates")}
+    category_fk = next(
+        fk for fk in inspector.get_foreign_keys("store_products")
+        if fk["constrained_columns"] == ["category_id"]
+    )
+    assert category_fk["options"]["ondelete"].upper() == "SET NULL"
+
+
+def test_postgres_catalog_barcode_and_external_id_uniqueness(postgres_session):
+    store = Store(name="Isolated test store", base_url="https://local-test.invalid")
+    category = Category(name="Isolated test category", slug="isolated-test-category")
+    postgres_session.add_all([store, category])
+    postgres_session.flush()
+    product = Product(name="Isolated test product", barcode="TEST-BARCODE-001")
+    postgres_session.add(product)
+    postgres_session.flush()
+
+    # PostgreSQL UNIQUE permits several NULL identifiers, as intended.
+    listings = [
+        StoreProduct(store_id=store.id, category_id=category.id,
+                     product_url=f"https://local-test.invalid/{n}", product_name=f"Test listing {n}")
+        for n in range(2)
+    ]
+    postgres_session.add_all(listings)
+    postgres_session.flush()
+    assert listings[0].category.name == category.name
+
+    postgres_session.add(Product(name="Duplicate test barcode", barcode=product.barcode))
+    with pytest.raises(IntegrityError):
+        postgres_session.flush()
+    postgres_session.rollback()
+
+
+def test_postgres_rejects_duplicate_store_external_id(postgres_session):
+    store = Store(name="Isolated duplicate test store", base_url="https://local-test.invalid")
+    postgres_session.add(store)
+    postgres_session.flush()
+    postgres_session.add_all([
+        StoreProduct(store_id=store.id, external_id="same-test-id",
+                     product_url="https://local-test.invalid/first", product_name="First test listing"),
+        StoreProduct(store_id=store.id, external_id="same-test-id",
+                     product_url="https://local-test.invalid/second", product_name="Second test listing"),
+    ])
+    with pytest.raises(IntegrityError):
+        postgres_session.flush()
+    postgres_session.rollback()
 
 
 def test_postgres_restrict_and_soft_deactivation_preserve_observations(postgres_session):

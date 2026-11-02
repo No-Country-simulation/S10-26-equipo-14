@@ -12,14 +12,17 @@ class ExchangeRate(Base):
 
     __tablename__ = "exchange_rates"
     __table_args__ = (
-        UniqueConstraint("source", "rate_type", "base_currency", "quote_currency", "observed_at", name="uq_exchange_rates_observation"),
+        UniqueConstraint("source", "rate_type", "rate_side", "base_currency", "quote_currency", "observed_at", name="uq_exchange_rates_observation"),
         CheckConstraint("rate > 0", name="ck_exchange_rates_rate_positive"),
+        CheckConstraint("rate_side IN ('reference', 'buy', 'sell')", name="ck_exchange_rates_rate_side"),
         Index("ix_exchange_rates_type_date", "rate_type", "observed_at"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     source: Mapped[str] = mapped_column(String(100), nullable=False)
     rate_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    # `reference` covers sources that publish one rate; buy/sell are distinct.
+    rate_side: Mapped[str] = mapped_column(String(10), nullable=False, default="reference", server_default="reference")
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD", server_default="USD")
     quote_currency: Mapped[str] = mapped_column(String(3), nullable=False, default="ARS", server_default="ARS")
     rate: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
