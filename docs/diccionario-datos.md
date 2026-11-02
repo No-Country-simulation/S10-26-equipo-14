@@ -97,6 +97,44 @@ es 60, entonces 1 USD equivale a 60 DOP según esa cotización.
 Antes de implementar alerts deben definirse el tipo de umbral,
 su unidad, la dirección de la variación y la ventana temporal.
 
+## Esquema actual del backend MVP
+
+Las tablas reales se denominan `products` (producto canonico) y
+`store_products` (publicacion de una tienda). Esta seccion corresponde a las
+migraciones `4db267e3b121` y `d8f31a9c0e42` y supersede las filas marcadas como
+propuestas en las secciones iniciales.
+
+| Tabla.campo | Tipo | Regla | Significado |
+|---|---|---|---|
+| products.barcode | VARCHAR(64) | Opcional, UNIQUE cuando informado | Código de barras textual, conserva ceros iniciales |
+| store_products.store_id | BIGINT | FK NOT NULL, RESTRICT | Tienda que publica |
+| store_products.product_id | BIGINT | FK opcional, RESTRICT | Producto canonico asociado |
+| store_products.category_id | BIGINT | FK opcional, SET NULL | Categoria asignada por la tienda |
+| store_products.external_id | VARCHAR(180) | Opcional; UNIQUE junto a store_id | Identificador de origen cuando existe |
+| price_observations.store_product_id | BIGINT | FK NOT NULL, RESTRICT | Publicacion observada |
+| price_observations.amount | NUMERIC(14,2) | NOT NULL, positivo | Precio observado como Decimal |
+| price_observations.promotional_price | NUMERIC(14,2) | Opcional, positivo | Precio promocional cuando la fuente lo informa |
+| price_observations.source_url | TEXT | Opcional | URL usada para esa observacion |
+| price_observations.is_available | BOOLEAN | Opcional | Disponibilidad; NULL significa no informada |
+| price_observations.observed_at | TIMESTAMPTZ | NOT NULL | Momento de captura con zona horaria |
+| exchange_rates.rate_type | VARCHAR(30) | NOT NULL | Tipo de cotizacion, por ejemplo official o blue |
+| exchange_rates.rate_side | VARCHAR(10) | NOT NULL; reference/buy/sell | Lado publicado por la fuente; reference es el valor unico |
+| exchange_rates.source | VARCHAR(100) | NOT NULL | Fuente identificable de la cotizacion |
+| exchange_rates.base_currency | VARCHAR(3) | NOT NULL | Moneda base (por defecto USD) |
+| exchange_rates.quote_currency | VARCHAR(3) | NOT NULL | Moneda cotizada (por defecto ARS) |
+| exchange_rates.rate | NUMERIC(18,6) | NOT NULL, positivo | Tasa como Decimal |
+| exchange_rates.observed_at | TIMESTAMPTZ | NOT NULL | Momento de vigencia/publicacion con zona horaria |
+
+La unicidad `(store_id, external_id)` permite varios `NULL` en PostgreSQL; por
+ello no se fabrica un identificador para publicaciones que carecen de uno. La
+unicidad nullable de `products.barcode` permite multiples productos sin codigo.
+
+Para una observacion fechada, consultar `GET /api/v1/exchange-rates` con
+`rate_type` y `on_date` (timestamp con zona). La API devuelve tasas de ese tipo
+con `observed_at <= on_date`, ordenadas de mas reciente a mas antigua; el primer
+resultado es la ultima cotizacion conocida no posterior a la fecha solicitada.
+Si se necesita un lado de compra/venta especifico, seleccionar por `rate_side`.
+
 ## Nota de mantenimiento
 
 Este diccionario debe actualizarse cuando cambie una migración
