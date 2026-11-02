@@ -1,8 +1,8 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -13,7 +13,7 @@ class Store(Base):
     __tablename__ = "stores"
 
     id: Mapped[int] = mapped_column(
-        BigInteger,
+        BigInteger().with_variant(Integer, "sqlite"),
         primary_key=True,
         autoincrement=True,
     )
@@ -34,3 +34,4 @@ class Store(Base):
         nullable=False,
         server_default=func.now(),
     )
+    products: Mapped[list["StoreProduct"]] = relationship(back_populates="store")

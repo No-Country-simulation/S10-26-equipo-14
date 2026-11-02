@@ -7,7 +7,9 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import settings
 from app.db.base import Base
-from app.models import Store  # noqa: F401
+from app.models import (  # noqa: F401
+    Category, ExchangeRate, ExtractionRun, PriceObservation, Product, Store, StoreProduct,
+)
 
 config = context.config
 target_metadata = Base.metadata
