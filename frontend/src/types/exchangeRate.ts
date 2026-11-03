@@ -1,13 +1,13 @@
-/**
- * Interfaz ExchangeRate — Modelo de dominio del backend.
- *
- * PENDIENTE DE CONFIRMAR con el backend (backend/app/models/exchange_rate.py vacío).
- * Definición preliminar basada en docs/arquitectura.md.
- */
+import type { DecimalString } from './price'
+
+/** Historical exchange quote; rate_side distinguishes reference/buy/sell. */
 export interface ExchangeRate {
   id: number
-  pair: string // ej. "USD/ARS"
-  rate: number
   source: string
-  recorded_at: string // ISO 8601
+  rate_type: string
+  rate_side: 'reference' | 'buy' | 'sell'
+  base_currency: string
+  quote_currency: string
+  rate: DecimalString
+  observed_at: string
 }

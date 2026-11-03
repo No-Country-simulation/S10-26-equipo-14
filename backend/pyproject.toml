@@ -8,12 +8,21 @@ version = "0.1.0"
 description = "API backend de PriceScope"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi",
-    "uvicorn[standard]",
+  "alembic>=1.13,<2",
+  "fastapi>=0.115,<1",
+  "psycopg[binary]>=3.2,<4",
+  "pydantic-settings>=2.6,<3",
+  "sqlalchemy>=2.0,<3",
+  "uvicorn[standard]>=0.34,<1",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-    "httpx",
-]
+dev = ["httpx>=0.27,<1", "pytest>=8,<10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["integration: requires the isolated local PostgreSQL test database"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]

@@ -16,13 +16,19 @@ def normalize_database_url(url: str) -> str:
     return url
 
 
-engine = create_engine(
-    normalize_database_url(settings.database_url),
-    pool_pre_ping=True,
-)
+database_url = normalize_database_url(settings.database_url)
+engine = create_engine(database_url, pool_pre_ping=True)
 
 SessionLocal = sessionmaker(
     bind=engine,
     autoflush=False,
     expire_on_commit=False,
 )
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

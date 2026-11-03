@@ -1,8 +1,4 @@
 import {
-  Metric,
-  Badge,
-} from '@tremor/react'
-import {
   LineChart as RLineChart,
   BarChart as RBarChart,
   AreaChart as RAreaChart,
@@ -16,10 +12,36 @@ import {
   Bar,
   Area,
 } from 'recharts'
+import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge as ShadcnBadge } from '@/components/ui/badge'
+
+const metricColors = {
+  blue: 'text-blue-600',
+  indigo: 'text-indigo-600',
+  red: 'text-red-600',
+} as const
+
+const badgeColors = {
+  blue: 'border-blue-200 bg-blue-50 text-blue-700',
+  red: 'border-red-200 bg-red-50 text-red-700',
+  green: 'border-green-200 bg-green-50 text-green-700',
+  gray: 'border-slate-200 bg-slate-100 text-slate-700',
+} as const
+
+function Metric({ color, children }: { color: keyof typeof metricColors; children: ReactNode }) {
+  return <p className={`text-3xl font-semibold tracking-tight ${metricColors[color]}`}>{children}</p>
+}
+
+function DemoBadge({ color = 'gray', children }: { color?: keyof typeof badgeColors; children: ReactNode }) {
+  return (
+    <ShadcnBadge variant="outline" className={`h-5 px-2 py-0.5 text-xs ${badgeColors[color]}`}>
+      {children}
+    </ShadcnBadge>
+  )
+}
 
 const lineData = [
   { month: 'Ene', precio: 100, tipoCambio: 950 },
@@ -54,7 +76,7 @@ export default function DemoPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Demo - Librerias instaladas</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Muestra de componentes de Tremor y shadcn/ui con Tailwind CSS v4.
+            Muestra de componentes locales y shadcn/ui con Tailwind CSS v4.
           </p>
         </div>
       </div>
@@ -67,7 +89,7 @@ export default function DemoPage() {
           </CardHeader>
           <CardContent>
             <Metric color="blue">12,4%</Metric>
-            <Badge color="gray" size="sm">+0,8 pp</Badge>
+            <DemoBadge>+0,8 pp</DemoBadge>
           </CardContent>
         </Card>
         <Card>
@@ -77,7 +99,7 @@ export default function DemoPage() {
           </CardHeader>
           <CardContent>
             <Metric color="indigo">$ 980,50</Metric>
-            <Badge color="gray" size="sm">+1,2%</Badge>
+            <DemoBadge>+1,2%</DemoBadge>
           </CardContent>
         </Card>
         <Card>
@@ -87,7 +109,7 @@ export default function DemoPage() {
           </CardHeader>
           <CardContent>
             <Metric color="blue">$ 1.240,00</Metric>
-            <Badge color="gray" size="sm">-0,4%</Badge>
+            <DemoBadge>-0,4%</DemoBadge>
           </CardContent>
         </Card>
         <Card>
@@ -97,7 +119,7 @@ export default function DemoPage() {
           </CardHeader>
           <CardContent>
             <Metric color="red">26,5%</Metric>
-            <Badge color="gray" size="sm">+0,3 pp</Badge>
+            <DemoBadge>+0,3 pp</DemoBadge>
           </CardContent>
         </Card>
       </div>
@@ -161,25 +183,25 @@ export default function DemoPage() {
 
       <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
         <div className="flex items-center gap-2">
-          <Badge color="blue">Activo</Badge>
+          <DemoBadge color="blue">Activo</DemoBadge>
           <ShadcnBadge variant="default"> shadcn/ui </ShadcnBadge>
         </div>
         <div className="flex items-center gap-2">
-          <Badge color="red">Alerta</Badge>
+          <DemoBadge color="red">Alerta</DemoBadge>
           <ShadcnBadge variant="destructive"> shadcn/ui </ShadcnBadge>
         </div>
         <div className="flex items-center gap-2">
-          <Badge color="green">Positivo</Badge>
+          <DemoBadge color="green">Positivo</DemoBadge>
           <ShadcnBadge variant="secondary"> shadcn/ui </ShadcnBadge>
         </div>
         <div className="flex items-center gap-2">
-          <Badge color="gray">Sin datos</Badge>
+          <DemoBadge>Sin datos</DemoBadge>
           <ShadcnBadge variant="outline"> shadcn/ui </ShadcnBadge>
         </div>
       </div>
 
       <div className="flex items-center gap-4">
-        <Button>Tremor Button</Button>
+        <Button>Base UI Button</Button>
         <Button variant="outline">shadcn/ui Button</Button>
       </div>
 
