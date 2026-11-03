@@ -32,6 +32,13 @@ class ProductOut(ReadModel):
     category_id: int | None
 
 
+class ProductPageOut(BaseModel):
+    items: list[ProductOut]
+    total: int
+    limit: int
+    offset: int
+
+
 class StoreProductCreate(BaseModel):
     store_id: int
     product_id: int | None = None

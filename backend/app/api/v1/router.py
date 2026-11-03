@@ -1,13 +1,13 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import Category, ExchangeRate, PriceObservation, Product, Store, StoreProduct
-from app.schemas.catalog import CategoryOut, ProductOut, StoreOut, StoreProductCreate, StoreProductOut
+from app.schemas.catalog import CategoryOut, ProductOut, ProductPageOut, StoreOut, StoreProductCreate, StoreProductOut
 from app.schemas.market import ExchangeRateOut, PriceObservationCreate, PriceObservationOut
 
 router = APIRouter(prefix="/api/v1")
@@ -29,6 +29,36 @@ def list_products(category_id: int | None = None, db: Session = Depends(get_db))
     if category_id is not None:
         query = query.where(Product.category_id == category_id)
     return db.scalars(query).all()
+
+
+@router.get("/products/paginated", response_model=ProductPageOut, tags=["catalog"])
+def list_products_paginated(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    category_id: int | None = Query(default=None, gt=0),
+    db: Session = Depends(get_db),
+):
+    filters = []
+    if category_id is not None:
+        filters.append(Product.category_id == category_id)
+
+    total = db.scalar(select(func.count()).select_from(Product).where(*filters)) or 0
+    items = db.scalars(
+        select(Product)
+        .where(*filters)
+        .order_by(Product.name, Product.id)
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+@router.get("/products/{product_id}", response_model=ProductOut, tags=["catalog"])
+def get_product(product_id: int = Path(gt=0), db: Session = Depends(get_db)):
+    product = db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Producto no encontrado")
+    return product
 
 
 @router.get("/store-products", response_model=list[StoreProductOut], tags=["catalog"])
