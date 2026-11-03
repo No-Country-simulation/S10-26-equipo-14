@@ -1,35 +1,15 @@
-const features = [
-  {
-    title: 'Recolección automatizada',
-    description:
-      'Extracción periódica de precios de tiendas de comercio electrónico mediante scripts programados.',
-  },
-  {
-    title: 'Normalización de productos',
-    description:
-      'Asociación de productos equivalentes entre tiendas, con detección de presentaciones y variantes.',
-  },
-  {
-    title: 'Seguimiento de promociones',
-    description:
-      'Detección y seguimiento de promociones temporales, cambios de precio y disponibilidad.',
-  },
-  {
-    title: 'Cotizaciones cambiarias',
-    description:
-      'Integración de cotizaciones de divisas con marca de tiempo para conversiones confiables.',
-  },
-  {
-    title: 'Histórico de precios',
-    description:
-      'Almacenamiento histórico de precios y tipos de cambio para análisis de tendencias.',
-  },
-  {
-    title: 'Indicadores de inflación',
-    description:
-      'Cálculo de inflación acumulada y variaciones porcentuales en moneda local y extranjera.',
-  },
-]
+import { stores } from "@/data/mock"
+import { categories } from "@/data/mock"
+import { products } from "@/data/mock"
+import { exchangeRates } from "@/data/mock"
+import MetricCard from "@/components/metrics/MetricCard"
+
+const activeStores = stores.filter((s) => s.is_active).length
+const totalProducts = products.length
+const totalCategories = categories.length
+const officialRate = exchangeRates.find(
+  (r) => r.source === "oficial",
+)
 
 export default function HomePage() {
   return (
@@ -48,20 +28,28 @@ export default function HomePage() {
         </p>
       </div>
 
-      <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {features.map((feature) => (
-          <div
-            key={feature.title}
-            className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md"
-          >
-            <h2 className="text-base font-semibold text-slate-900">
-              {feature.title}
-            </h2>
-            <p className="mt-2 text-sm leading-relaxed text-slate-600">
-              {feature.description}
-            </p>
-          </div>
-        ))}
+      <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricCard
+          title="Tiendas activas"
+          value={activeStores}
+          subtitle={`de ${stores.length} registradas`}
+          trend={{ label: "vs total", value: stores.length, positive: true }}
+        />
+        <MetricCard
+          title="Productos monitoreados"
+          value={totalProducts}
+          subtitle="en el catálogo actual"
+        />
+        <MetricCard
+          title="Categorías"
+          value={totalCategories}
+          subtitle="para clasificar publicaciones"
+        />
+        <MetricCard
+          title="Dólar oficial"
+          value={officialRate ? `$ ${Number(officialRate.rate).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+          subtitle={officialRate ? new Date(officialRate.recorded_at).toLocaleDateString("es-AR") : "sin datos"}
+        />
       </div>
     </section>
   )
