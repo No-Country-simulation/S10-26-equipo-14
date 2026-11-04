@@ -1,17 +1,20 @@
 import React from 'react'
 import { prices } from '@/data/mock'
 import { exchangeRates } from '@/data/mock'
+import { stores } from '@/data/mock'
+import { categories } from '@/data/mock'
+import { products } from '@/data/mock'
 import DualAxisTimeSeriesChart from '@/components/charts/DualAxisTimeSeriesChart'
 import FilterBar from '@/components/filters/FilterBar'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 type RawPrice = {
   id: number
+  product_id: number
+  store_id: number
   amount: number | string
   currency: string
   observed_at: string
-  store_id?: number
-  product_id?: number
 }
 
 type RawRate = {
@@ -52,16 +55,25 @@ function mergeSeries(
 }
 
 export default function DivisasPage() {
-  const [filters, _setFilters] = React.useState<{
+  const [filters, setFilters] = React.useState<{
     storeId: number | null
+    categoryId: number | null
     dateFrom: string | null
     dateTo: string | null
-  }>({ storeId: null, dateFrom: null, dateTo: null })
+  }>({ storeId: null, categoryId: null, dateFrom: null, dateTo: null })
 
-  // Filtrar precios por tienda y rango de fechas
+  // Mapa producto_id -> category_id para filtrar precios por categoría
+  const productCategoryMap = new Map(products.map((p) => [p.id, p.category_id]))
+
+  // Filtrar precios por tienda, categoría y rango de fechas
   let filteredPrices = prices as unknown as RawPrice[]
   if (filters.storeId) {
     filteredPrices = filteredPrices.filter((p) => p.store_id === filters.storeId)
+  }
+  if (filters.categoryId) {
+    filteredPrices = filteredPrices.filter(
+      (p) => productCategoryMap.get(p.product_id) === filters.categoryId
+    )
   }
   if (filters.dateFrom) {
     filteredPrices = filteredPrices.filter((p) => p.observed_at >= filters.dateFrom + 'T00:00:00Z')
@@ -91,6 +103,11 @@ export default function DivisasPage() {
 
   const chartData = mergeSeries(priceByDate, rateByDate)
 
+  const selectedStore = filters.storeId ? stores.find((s) => s.id === filters.storeId)?.name : null
+  const selectedCategory = filters.categoryId
+    ? categories.find((c) => c.id === filters.categoryId)?.name
+    : null
+
   return (
     <section className="mx-auto max-w-7xl px-4 py-8 space-y-6">
       <div className="flex items-center justify-between">
@@ -104,12 +121,12 @@ export default function DivisasPage() {
       </div>
 
       <FilterBar
-        stores={[]}
-        categories={[]}
-        onFiltersChange={() => {}}
+        stores={stores}
+        categories={categories}
+        onFiltersChange={(next) => setFilters(next)}
         initialFilters={{
           storeId: filters.storeId,
-          categoryId: null,
+          categoryId: filters.categoryId,
           dateFrom: filters.dateFrom,
           dateTo: filters.dateTo,
           search: '',
@@ -121,6 +138,8 @@ export default function DivisasPage() {
           <CardTitle className="text-sm font-semibold">Precio vs tipo de cambio</CardTitle>
           <CardDescription className="text-xs text-slate-500">
             Eje izquierdo: precio promedio en ARS · Eje derecho: tipo de cambio en ARS por USD
+            {selectedStore && ` · Tienda: ${selectedStore}`}
+            {selectedCategory && ` · Categoría: ${selectedCategory}`}
           </CardDescription>
         </CardHeader>
         <CardContent>
