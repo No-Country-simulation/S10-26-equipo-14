@@ -4,6 +4,7 @@ import AboutPage from '../pages/AboutPage'
 import HomePage from '../pages/HomePage'
 import DemoPage from '../pages/DemoPage'
 import CatalogoPage from '../pages/CatalogoPage'
+import DivisasPage from '../pages/DivisasPage'
 
 const ComingSoon = () => (
   <section className="mx-auto max-w-2xl py-12 text-center">
@@ -23,8 +24,8 @@ export const router = createBrowserRouter([
       { path: 'about', element: <AboutPage /> },
       { path: 'demo', element: <DemoPage /> },
       { path: 'catalogo', element: <CatalogoPage /> },
+      { path: 'divisas', element: <DivisasPage /> },
       { path: 'comparativas', element: <ComingSoon /> },
-      { path: 'divisas', element: <ComingSoon /> },
       { path: 'alertas', element: <ComingSoon /> },
     ],
   },
