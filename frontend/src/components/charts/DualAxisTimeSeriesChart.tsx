@@ -80,7 +80,7 @@ export default function DualAxisTimeSeriesChart({
       )}
       <div className="h-64 w-full border border-slate-200 bg-slate-50 relative pl-8 pr-8">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ left: 20, right: 70 }}>
+          <LineChart data={data} margin={{ top: 10, left: 20, right: 70, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="date"
@@ -94,7 +94,6 @@ export default function DualAxisTimeSeriesChart({
                 label={{ value: 'Precio (ARS)', angle: -90, position: 'left', offset: 0 }}
                 tick={{ fontSize: 12, fill: '#64748b' }}
                 axisLine={{ stroke: '#cbd5e1' }}
-                domain={['dataMin', 'dataMax']}
                 tickFormatter={(v) => `$${v}`}
               />
             )}
@@ -104,7 +103,6 @@ export default function DualAxisTimeSeriesChart({
                 label={{ value: 'Tipo de cambio (ARS/USD)', angle: -90, position: 'right', offset: 0 }}
                 tick={{ fontSize: 12, fill: '#64748b' }}
                 axisLine={{ stroke: '#cbd5e1' }}
-                domain={['dataMin', 'dataMax']}
                 tickFormatter={(v) => `$${v}`}
               />
             )}
