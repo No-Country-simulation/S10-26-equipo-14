@@ -21,8 +21,8 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { path: '/', label: 'Tablero', icon: LayoutDashboard },
   { path: '/catalogo', label: 'Catálogo', icon: Package },
-  { path: '/comparativas', label: 'Comparativas', icon: Scale },
   { path: '/divisas', label: 'Divisas', icon: DollarSign },
+  { path: '/comparativas', label: 'Comparativas', icon: Scale },
   { path: '/alertas', label: 'Alertas', icon: Bell },
   { path: '/about', label: 'Acerca de', icon: Info },
   { path: '/demo', label: 'Demo', icon: Monitor },

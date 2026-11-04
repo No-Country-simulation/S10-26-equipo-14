@@ -4,8 +4,8 @@ import { ChevronRight } from 'lucide-react'
 const ROUTE_LABELS: Record<string, string> = {
   '/': 'Tablero',
   '/catalogo': 'Catálogo',
-  '/comparativas': 'Comparativas',
   '/divisas': 'Divisas',
+  '/comparativas': 'Comparativas',
   '/alertas': 'Alertas',
   '/about': 'Acerca de',
   '/demo': 'Demo',
