@@ -1,213 +1,154 @@
 # Contratos frontend/backend — PriceScope
 
-> Estado: documentación de los contratos existentes en `develop`.  
-> Base revisada: `develop` en el commit `367d92da80080a850a8aa287e652745339b0d964`.  
-> Alcance: análisis documental para PS-026 / Issue #38. Este documento no implementa endpoints ni modifica modelos.
+> Estado: documentación de los contratos existentes en la rama base `develop`.
+> Commit de `develop` revisado: `367d92da80080a850a8aa287e652745339b0d964`.
+> Alcance: PS-026 / Issue #38. Este documento no implementa endpoints ni modifica modelos.
 
 ## 1. Resumen
 
-El backend FastAPI publica rutas para tiendas, categorías, productos canónicos, publicaciones por tienda, observaciones de precios y cotizaciones. El frontend ya declara interfaces TypeScript para esas entidades, pero HomePage y CatalogoPage todavía consumen archivos JSON simulados. No se encontró un cliente HTTP en las páginas revisadas.
+FastAPI publica consultas de tiendas, categorías, productos canónicos, publicaciones, observaciones históricas y cotizaciones. También publica operaciones POST para crear publicaciones y observaciones. Las páginas `HomePage` y `CatalogoPage` aún leen JSON de `frontend/src/data/mock`; no se encontró integración HTTP en esas páginas. `DemoPage` presenta valores y series hardcodeados.
 
-La integración no consiste en convertir directamente cada mock en un tipo de API: el mock `products.json` representa publicaciones por tienda, mientras que el backend separa el producto canónico (`Product`) de la publicación (`StoreProduct`).
+El mock `products.json` representa publicaciones por tienda, mientras el backend separa el producto canónico (`Product`) de la publicación comercial (`StoreProduct`). Esa distinción debe mantenerse al integrar el catálogo.
 
-## 2. Fuentes de código revisadas
+## 2. Fuentes revisadas
 
-| Área | Archivo |
+| Área | Archivos principales |
 |---|---|
-| Rutas HTTP | [backend/app/api/v1/router.py](../backend/app/api/v1/router.py) |
-| Esquemas de catálogo | [backend/app/schemas/catalog.py](../backend/app/schemas/catalog.py) |
-| Esquemas de mercado | [backend/app/schemas/market.py](../backend/app/schemas/market.py) |
-| Contrato conceptual de modelos | [docs/model-contracts.md](./model-contracts.md) |
-| Tipos frontend | [frontend/src/types/store.ts](../frontend/src/types/store.ts), [category.ts](../frontend/src/types/category.ts), [product.ts](../frontend/src/types/product.ts), [storeProduct.ts](../frontend/src/types/storeProduct.ts), [price.ts](../frontend/src/types/price.ts), [exchangeRate.ts](../frontend/src/types/exchangeRate.ts) |
-| Páginas frontend | [HomePage.tsx](../frontend/src/pages/HomePage.tsx), [CatalogoPage.tsx](../frontend/src/pages/CatalogoPage.tsx) |
-| Mocks | [stores.json](../frontend/src/data/mock/stores.json), [categories.json](../frontend/src/data/mock/categories.json), [products.json](../frontend/src/data/mock/products.json), [prices.json](../frontend/src/data/mock/prices.json), [exchangeRates.json](../frontend/src/data/mock/exchangeRates.json) |
+| Aplicación y rutas | `backend/app/main.py`, `backend/app/api/v1/router.py` |
+| Modelos SQLAlchemy | `backend/app/models/store.py`, `category.py`, `product.py`, `store_product.py`, `price.py`, `exchange_rate.py` |
+| Esquemas Pydantic | `backend/app/schemas/catalog.py`, `backend/app/schemas/market.py` |
+| Tipos TypeScript | `frontend/src/types/store.ts`, `category.ts`, `product.ts`, `storeProduct.ts`, `price.ts`, `exchangeRate.ts` |
+| Pantallas y filtros | `frontend/src/pages/HomePage.tsx`, `CatalogoPage.tsx`, `DemoPage.tsx`, `frontend/src/components/filters/FilterBar.tsx` |
+| Datos simulados | `frontend/src/data/mock/stores.json`, `categories.json`, `products.json`, `prices.json`, `exchangeRates.json` |
 
-Los esquemas Pydantic indicados son los modelos usados como `response_model` por las rutas. Los ejemplos de la sección 4 son ejemplos representativos construidos a partir de esos esquemas; no son registros leídos de Neon ni respuestas capturadas de una API desplegada.
+Los esquemas de salida mencionados son los `response_model` de las rutas. La inspección generó el esquema con `app.openapi()` desde `backend/app/main.py`, sin conectar a una base de datos. El resultado es OpenAPI 3.1.0. Se recorrió el documento generado buscando las claves `example` y `examples`: no se encontró ninguna en parámetros, respuestas ni esquemas. OpenAPI publica esquemas y respuestas de validación, pero no ejemplos concretos de respuesta. Por ello este documento no presenta objetos JSON inventados ni ejemplos ilustrativos como respuestas reales.
 
-## 3. Correspondencia de entidades
+## 3. Correspondencia de las seis entidades
 
-| Entidad | Respuesta backend (Pydantic) | Tipo TypeScript | Mock y compatibilidad |
+En las respuestas, los campos listados son obligatorios como propiedades JSON. Cuando se indica nullable, la propiedad sigue presente y su valor puede ser `null`; eso no equivale a que pueda omitirse.
+
+| Entidad | Contrato de salida backend | Campos anulables | TypeScript y mock |
 |---|---|---|---|
-| Store | `StoreOut`: `id:number`, `name:string`, `base_url:string`, `country:string|null`, `is_active:boolean`, `created_at:datetime`. | `Store` coincide; fecha como `string` ISO. | `stores.json` tiene los mismos campos. Sus valores son demostrativos. |
-| Category | `CategoryOut`: `id:number`, `name:string`, `slug:string`. | `Category` coincide. | `categories.json` agrega `description`, que no está en la respuesta. El tipo TS no declara ese campo. |
-| Product | `ProductOut`: `id`, `name`, `brand:string|null`, `model:string|null`, `description:string|null`, `barcode:string|null`, `category_id:number|null`. | `Product` coincide con el esquema. | `products.json` no es un mock de Product: contiene `store_id`, `sku`, `url`, `is_active` y nombre de publicación. |
-| StoreProduct | `StoreProductOut`: `id`, `store_id`, `product_id:number|null`, `category_id:number|null`, `external_id:string|null`, `product_url:string`, `product_name:string`, `currency:string`. | `StoreProduct` coincide en sus campos. | No hay un mock separado con este contrato. La página Catálogo consume el mock plano de publicaciones. |
-| PriceObservation | `PriceObservationOut`: `id`, `store_product_id`, `amount:Decimal`, `promotional_price:Decimal|null`, `currency`, `source_url:string|null`, `is_available:boolean|null`, `observed_at:datetime`. | `PriceObservation` usa `DecimalString` (`string`) y fecha `string`; coincide con la serialización esperada. | `prices.json` usa `product_id`, `store_id` y montos JSON numéricos. No es compatible directamente. |
-| ExchangeRate | `ExchangeRateOut`: `id`, `source`, `rate_type`, `rate_side`, `base_currency`, `quote_currency`, `rate:Decimal`, `observed_at:datetime`. | `ExchangeRate` usa `DecimalString`; `rate_side` es unión TS `reference \| buy \| sell`. | `exchangeRates.json` usa `pair`, `recorded_at`, montos numéricos y clasifica `source` como `oficial`/ `blue`. No coincide con el contrato de API. |
+| **Store** | `StoreOut`: `id:number`, `name:string`, `base_url:string`, `country:string|null`, `is_active:boolean`, `created_at:date-time`. | `country`. | `Store` declara esos campos y usa `string` para `created_at`. `stores.json` tiene la misma forma, con contenido simulado. |
+| **Category** | `CategoryOut`: `id:number`, `name:string`, `slug:string`. | Ninguno. | `Category` coincide. `categories.json` añade `description`, que no existe en el modelo ni en la respuesta API. |
+| **Product** | `ProductOut`: `id:number`, `name:string`, `brand:string|null`, `model:string|null`, `description:string|null`, `barcode:string|null`, `category_id:number|null`. | `brand`, `model`, `description`, `barcode`, `category_id`. | `Product` coincide con el esquema. `products.json` no tiene esta estructura: contiene campos de una publicación. |
+| **StoreProduct** | `StoreProductOut`: `id:number`, `store_id:number`, `product_id:number|null`, `category_id:number|null`, `external_id:string|null`, `product_url:string`, `product_name:string`, `currency:string`. | `product_id`, `category_id`, `external_id`. | `StoreProduct` coincide. No hay mock separado de esta entidad; la página de catálogo consume `products.json`. |
+| **PriceObservation** | `PriceObservationOut`: `id:number`, `store_product_id:number`, `amount:Decimal`, `promotional_price:Decimal|null`, `currency:string`, `source_url:string|null`, `is_available:boolean|null`, `observed_at:date-time`. | `promotional_price`, `source_url`, `is_available`. | `PriceObservation` representa los decimales como `DecimalString` (`string`) y el timestamp como `string`. `prices.json` usa `product_id`, `store_id` y montos numéricos, no el contrato API. |
+| **ExchangeRate** | `ExchangeRateOut`: `id:number`, `source:string`, `rate_type:string`, `rate_side:string`, `base_currency:string`, `quote_currency:string`, `rate:Decimal`, `observed_at:date-time`. | Ninguno. | `ExchangeRate` usa `DecimalString` y restringe `rate_side` a una unión TypeScript. OpenAPI/Pydantic lo publica como `string`; el modelo SQLAlchemy aplica una restricción de base de datos a `reference`, `buy` o `sell`. `exchangeRates.json` usa otra estructura. |
 
-### 3.1 Relaciones que no deben mezclarse
+### 3.1 Campos de entrada opcionales y anulables
 
-- `Product` es el producto canónico compartido entre comercios.
-- `StoreProduct` es una publicación concreta de un producto en una tienda. Su `product_id` puede ser nulo.
-- `StoreProduct.category_id` describe la categoría asignada a la publicación; `Product.category_id` describe la categoría canónica. Pueden diferir.
-- `PriceObservation` pertenece a una publicación mediante `store_product_id`. No se relaciona directamente con `product_id` ni con `store_id`.
+Los campos opcionales que siguen corresponden a esquemas de creación; no deben confundirse con las propiedades requeridas de las respuestas:
 
-Por lo tanto, la fila actual de `products.json` se parece semánticamente a `StoreProduct`, pero tampoco coincide campo por campo: `name` debería mapearse a `product_name`, `url` a `product_url`, y `sku` no debe asumirse equivalente a `external_id` sin una decisión funcional.
-
-## 4. Serialización y ejemplos representativos
-
-- Los campos `Decimal` de Pydantic se serializan como cadenas JSON para preservar precisión. El frontend usa `DecimalString = string`; no convertir estos valores a `number` para cálculos financieros sin definir una estrategia decimal.
-- Los campos `datetime` se representan como cadenas ISO 8601. Las rutas de observaciones y cotizaciones exigen zona horaria en sus parámetros temporales.
-- Los campos anulables del esquema deben reflejarse como `T | null` en TypeScript; no deben confundirse con campos opcionales ausentes.
-
-Los siguientes fragmentos ilustran la forma de las respuestas a partir de los esquemas Pydantic actuales. Los valores son ficticios y no representan datos de mercado:
-
-```json
-{
-  "id": 12,
-  "name": "Producto de ejemplo",
-  "brand": null,
-  "model": null,
-  "description": "Descripción ilustrativa",
-  "barcode": null,
-  "category_id": 3
-}
-```
-
-Ejemplo representativo de una publicación:
-
-```json
-{
-  "id": 31,
-  "store_id": 2,
-  "product_id": 12,
-  "category_id": 3,
-  "external_id": "SKU-EJEMPLO",
-  "product_url": "https://example.com/producto",
-  "product_name": "Producto de ejemplo",
-  "currency": "ARS"
-}
-```
-
-Ejemplo representativo de observación de precio:
-
-```json
-{
-  "id": 85,
-  "store_product_id": 31,
-  "amount": "1250.50",
-  "promotional_price": null,
-  "currency": "ARS",
-  "source_url": null,
-  "is_available": true,
-  "observed_at": "2026-01-20T10:00:00Z"
-}
-```
-
-Ejemplo representativo de cotización:
-
-```json
-{
-  "id": 9,
-  "source": "fuente-ejemplo",
-  "rate_type": "official",
-  "rate_side": "reference",
-  "base_currency": "USD",
-  "quote_currency": "ARS",
-  "rate": "1250.50",
-  "observed_at": "2026-01-20T09:00:00Z"
-}
-```
-
-## 5. Endpoints existentes
-
-Todas las rutas de negocio usan el prefijo `/api/v1`.
-
-| Método y ruta | Parámetros / comportamiento comprobado | Uso potencial |
+| Request | Requeridos | Opcionales, defaults y nulabilidad |
 |---|---|---|
-| `GET /health` | Devuelve estado de aplicación; no confirma disponibilidad de DB. | Liveness básico. |
-| `GET /stores` | Devuelve tiendas activas ordenadas por nombre. | Home y filtros de Catálogo. |
-| `GET /categories` | Devuelve categorías ordenadas por nombre. | Home y filtros de Catálogo. |
-| `GET /products` | Lista productos canónicos; acepta `category_id`. | Consultas de productos canónicos. |
-| `GET /products/paginated` | `limit` 1–100, `offset` >= 0, `category_id` opcional; devuelve `items,total,limit,offset`. | Paginación de productos canónicos, no publicaciones. |
-| `GET /products/{product_id}` | Devuelve producto canónico o 404. | Detalle del producto canónico. |
-| `GET /store-products` | Lista publicaciones; filtro opcional `store_id`. | Catálogo básico, con adaptación de campos. |
-| `POST /store-products` | Crea publicación; responde 201 o 409 por conflicto de integridad. | Escritura de publicaciones; requiere protección antes de exponer. |
-| `GET /price-observations` | Requiere `store_product_id`; acepta `start`, `end`, `limit` (1–1000). Orden descendente por `observed_at`. Fechas con zona horaria y `start <= end`. | Historial de una publicación. |
-| `POST /price-observations` | Crea observación; `observed_at` debe incluir zona horaria; responde 201 o 409. | Ingesta de observaciones; requiere protección. |
-| `GET /exchange-rates` | Requiere `rate_type`; acepta `on_date` con zona horaria; devuelve hasta 100 registros descendentes con fecha <= `on_date`. | Cotización por tipo y fecha. |
+| `StoreProductCreate` | `store_id`, `product_url`, `product_name`. | `product_id`, `category_id` y `external_id` aceptan `null` y por defecto son `null`; `currency` es opcional y por defecto `ARS`. `external_id` admite hasta 180 caracteres; URL y nombre tienen validaciones de formato/longitud en Pydantic. |
+| `PriceObservationCreate` | `store_product_id`, `amount`, `observed_at`. | `promotional_price`, `source_url` e `is_available` aceptan `null` y por defecto son `null`; `currency` es opcional y por defecto `ARS`. `amount` y `promotional_price`, si se informan, deben ser mayores que cero; admiten hasta 14 dígitos y 2 decimales en el esquema. |
 
-No se encontraron en el router revisado endpoints para búsqueda textual de publicaciones, catálogo compuesto, alta/consulta de ejecuciones de extracción, alertas, ni autenticación/login/registro. Tampoco hay endpoint para crear cotizaciones en el router revisado.
+No hay requests de creación publicados para Store, Category, Product o ExchangeRate en el router inspeccionado.
 
-## 6. Pantallas y compatibilidad actual
+### 3.2 Relaciones
+
+- `Product` es el producto canónico que puede vincular publicaciones equivalentes entre comercios.
+- `StoreProduct` representa la publicación de un producto en una tienda. `product_id` es anulable; la publicación también tiene `store_id` obligatorio y `category_id` opcional.
+- `Product.category_id` es la categoría canónica. `StoreProduct.category_id` es la categoría de la publicación; ambas pueden diferir.
+- `PriceObservation` referencia una publicación mediante `store_product_id`. No contiene `product_id` ni `store_id` propios.
+- Las respuestas actuales son planas: entregan IDs, no objetos Store/Product/Category anidados.
+
+La fila de `products.json` puede entenderse funcionalmente como una publicación, pero no se debe equiparar automáticamente: `name` se parece a `product_name`, `url` a `product_url`, y `sku` no está definido como equivalente de `external_id`.
+
+## 4. Serialización
+
+- En los esquemas OpenAPI generados, los campos `Decimal` de salida (`PriceObservationOut.amount`, `promotional_price` y `ExchangeRateOut.rate`) aparecen como `type: string`. Pydantic serializa esos valores decimales como cadenas JSON; las interfaces usan `DecimalString = string` para no perder precisión con `number`.
+- Para los campos Decimal de entrada, OpenAPI acepta número o cadena según el esquema generado. La integración debe preservar precisión y no asumir que esa flexibilidad de entrada aplica a las respuestas.
+- Los campos `datetime` aparecen en OpenAPI como cadenas `format: date-time`; su representación es ISO 8601. SQLAlchemy usa `DateTime(timezone=True)` para fechas de observaciones y cotizaciones. Las rutas validan que los parámetros temporales y `observed_at` enviados incluyan zona horaria. No hay una garantía documentada de normalización de toda respuesta a `Z`/UTC.
+- Una propiedad nullable de salida sigue siendo obligatoria, y su valor puede ser `null`.
+
+## 5. Endpoints publicados
+
+Las rutas de negocio tienen el prefijo `/api/v1`; `/health` está fuera de ese prefijo.
+
+| Método y ruta | Request y comportamiento observado | Respuesta observada |
+|---|---|---|
+| `GET /health` | Sin parámetros. | Objeto con estado `ok`; no comprueba disponibilidad de base de datos. |
+| `GET /api/v1/stores` | Sin parámetros. Filtra `is_active = true` y ordena por nombre. | `list[StoreOut]`. |
+| `GET /api/v1/categories` | Sin parámetros; orden por nombre. | `list[CategoryOut]`. |
+| `GET /api/v1/products` | `category_id` opcional; no declara una validación positiva explícita. Orden por nombre. | `list[ProductOut]`. |
+| `GET /api/v1/products/paginated` | `limit` default 20, 1–100; `offset` default 0, mínimo 0; `category_id` opcional y mayor que 0. Orden por nombre e ID; `total` cuenta el mismo filtro sin paginación. | `ProductPageOut`: `items`, `total`, `limit`, `offset`. |
+| `GET /api/v1/products/{product_id}` | `product_id` mayor que 0. | `ProductOut`; 404 si no existe. |
+| `GET /api/v1/store-products` | `store_id` opcional; sin validación positiva explícita. Orden por ID. | `list[StoreProductOut]`. |
+| `POST /api/v1/store-products` | Body `StoreProductCreate`. | `StoreProductOut`, 201 al crear y 409 ante conflicto de integridad. |
+| `GET /api/v1/price-observations` | Requiere `store_product_id > 0`; `start` y `end` opcionales, con zona horaria; `limit` default 100, 1–1000. Rechaza `start > end`; orden descendente por `observed_at`. | `list[PriceObservationOut]`. |
+| `POST /api/v1/price-observations` | Body `PriceObservationCreate`; `observed_at` requiere zona horaria. | `PriceObservationOut`, 201 al crear y 409 ante conflicto de integridad. |
+| `GET /api/v1/exchange-rates` | Requiere `rate_type` de 1–30 caracteres; `on_date` opcional y con zona horaria. Si se envía, incluye registros con `observed_at <= on_date`; orden descendente y máximo 100. | `list[ExchangeRateOut]`. |
+
+El router inspeccionado no publica búsqueda textual de productos/publicaciones, endpoint de catálogo compuesto, CRUD de ejecuciones de extracción, alertas, autenticación/registro/login, ni creación de cotizaciones.
+
+## 6. Mocks, pantallas y límites actuales
+
+### Mocks
+
+- `stores.json` comparte la forma general de `Store`; sus contenidos son de demostración.
+- `categories.json` incluye `description`, ausente del modelo SQLAlchemy y de `CategoryOut`.
+- `products.json` contiene `id`, `store_id`, `category_id`, `name`, `sku`, `url`, `is_active`. Es una representación plana de publicaciones y no de `ProductOut` ni de `StoreProductOut`.
+- `prices.json` asocia importes por `product_id` y `store_id`; la API asocia observaciones a `store_product_id`. El JSON contiene importes numéricos, mientras la respuesta API serializa Decimal como string.
+- `exchangeRates.json` usa `pair`, `recorded_at` y valores numéricos; la API separa `base_currency` y `quote_currency`, incluye `rate_type`, `rate_side` y `observed_at`, y serializa `rate` como string. Los valores `oficial` y `blue` pertenecen a los mocks; no prueban una integración con esas fuentes.
 
 ### HomePage
 
-Actualmente calcula tiendas activas, productos, categorías y cotización oficial desde mocks. Para consumir API:
-- `GET /stores` y `GET /categories` pueden alimentar sus conteos.
-- “Productos monitoreados” debe definirse: contar productos canónicos (`Product`) o publicaciones (`StoreProduct`).
-- La cotización debe adaptar `rate_type`, `rate_side`, `observed_at` y `rate`; no puede seguir buscando `source === "oficial"` ni leer `recorded_at` sin una transformación acordada.
+Calcula métricas leyendo los mocks. `GET /stores` y `GET /categories` podrían proporcionar listas para sus conteos. “Productos monitoreados” requiere decidir si cuenta productos canónicos o publicaciones. La pantalla busca `source === "oficial"` y usa `recorded_at`; debe adaptarse al esquema de cotizaciones antes de usar la API. No realiza requests HTTP.
 
-### CatalogoPage
+### CatalogoPage y FilterBar
 
-Actualmente filtra `products.json` en memoria usando `store_id`, `category_id` y texto sobre `name`. Renderiza tienda, categoría y `url`.
-- Puede obtener tiendas, categorías y publicaciones de endpoints actuales, pero debe distinguir `product_name`/ `product_url` de los campos del producto canónico.
-- El endpoint de publicaciones no incluye el último precio.
-- Consultar el historial una vez por cada tarjeta sería un patrón ineficiente; conviene definir una respuesta agregada para el catálogo.
-- `FilterBar` recoge fechas, pero la página revisada no las incorpora al estado aplicado ni a los chips activos.
+La pantalla filtra `products.json` en el cliente por tienda (`store_id`), categoría (`category_id`) y texto sobre `name`, y muestra tienda, categoría y `url`. El callback de FilterBar incluye fechas, pero `CatalogoPage` las descarta; las fechas no filtran resultados. Los chips activos tampoco muestran fechas.
+
+La API actual puede proporcionar tiendas, categorías y publicaciones. `GET /store-products` solo filtra por `store_id`; no filtra por categoría ni texto. No devuelve nombres de tienda/categoría ni el último precio como objetos asociados. `GET /price-observations` requiere `store_product_id` y resuelve historial publicación por publicación. Para conservar el comportamiento de la tarjeta de catálogo se necesita una estrategia explícita de composición, paginación y precio más reciente.
 
 ### DemoPage
 
-Sus métricas y series están hardcodeadas. Debe permanecer rotulada como demo mientras no consuma una fuente de datos real.
+Presenta métricas y series temporales hardcodeadas en la página con Recharts. No consulta mocks ni endpoints y los valores no deben interpretarse como datos reales.
 
-## 7. Propuesta de contrato agregado para catálogo (no implementado)
+## 7. Propuesta de respuesta agregada para el catálogo — no implementada
 
-Para una tarjeta de catálogo que necesita producto, publicación, tienda, ambas categorías y último precio, se propone estudiar una respuesta paginada como:
+Para una tarjeta que necesita producto canónico, publicación, tienda, categorías y último precio, se propone evaluar un recurso paginado con `items`, `total`, `limit` y `offset`. Cada elemento podría contener `product`, `listing` (`StoreProduct`), `store`, categoría canónica, categoría de publicación y `latest_price` nullable. La selección de la observación más reciente debería resolverse por publicación en el servidor.
 
-```text
-CatalogPage
-  items: CatalogItem[]
-  total: integer
-  limit: integer
-  offset: integer
+Esto es una propuesta, no un endpoint o esquema existente. Alternativamente, una primera integración puede combinar rutas actuales, con el costo de implementar en cliente la asociación y evitar consultas de historial por tarjeta.
 
-CatalogItem
-  product: ProductOut
-  listing: StoreProductOut
-  store: StoreOut
-  listing_category: CategoryOut | null
-  product_category: CategoryOut | null
-  latest_price: PriceObservationOut | null
-```
+## 8. Incompatibilidades priorizadas
 
-Esta es una propuesta de diseño, no un endpoint ni un esquema actualmente publicado. La consulta debería resolver la última observación por publicación en el servidor, evitando una petición de historial por tarjeta.
-
-## 8. Decisiones pendientes antes de implementar
-
-1. **Categoría:** decidir si el filtro visible representa la categoría de la publicación, la categoría canónica o ambas. Si ambas se ofrecen, usar parámetros distintos.
-2. **Fechas:** definir si el rango selecciona publicaciones con observaciones dentro del período y si `latest_price` significa último precio global o último precio dentro del rango.
-3. **Búsqueda:** acordar si busca en `Product.name`, `StoreProduct.product_name`, marca, modelo u otros campos.
-4. **Conteo Home:** definir si “productos monitoreados” cuenta productos únicos o publicaciones.
-5. **Catálogo agregado:** decidir si se crea un endpoint compuesto o si una primera versión acepta combinar rutas existentes en el cliente.
-6. **Cotizaciones:** acordar cómo presentar `rate_type` y `rate_side`; el tipo TS restringe `rate_side` a tres literales, mientras el esquema Pydantic lo declara como `str`.
-7. **Autenticación:** el Issue #29 incluye login/registro/token, pero no existen rutas de autenticación en el router revisado. Separar ese alcance o bloquearlo hasta diseñar e implementar autenticación y autorización.
-
-## 9. Incompatibilidades priorizadas
-
-| Prioridad | Incompatibilidad | Consecuencia |
+| Prioridad | Diferencia comprobada | Impacto |
 |---|---|---|
-| Alta | `products.json` mezcla producto y publicación. | No puede tiparse como `ProductOut`; necesita modelarse como `StoreProduct` o transformarse. |
-| Alta | Precios mock usan `product_id` y `store_id`; API usa `store_product_id`. | No se puede asociar el historial correctamente sin identificar la publicación. |
-| Alta | Catálogo API no entrega último precio ni paginación de publicaciones. | Se requiere endpoint agregado o una estrategia de consultas explícita. |
-| Media | Cotizaciones mock usan `pair` y `recorded_at`; API usa monedas separadas y `observed_at`. | Requiere adaptación de contrato y UI. |
-| Media | Filtros de fecha se capturan pero no se aplican. | La interfaz aparenta admitir una función que no opera. |
-| Media | `rate_side` es `string` en Pydantic y unión literal en TypeScript. | El contrato de runtime no valida la misma restricción que expresa TS. |
-| Baja | `categories.json` agrega `description`. | Campo mock excedente; no debe suponerse disponible desde API. |
+| Alta | `products.json` modela publicaciones; `GET /products` devuelve productos canónicos. | La respuesta no puede sustituir al mock de catálogo sin cambiar el modelo de UI o usar `StoreProduct`. |
+| Alta | Los mocks de precio relacionan por producto y tienda; la API requiere `store_product_id`. | No se puede asociar históricamente sin una identidad de publicación. |
+| Alta | Catálogo API no agrega tienda, categoría y último precio; las rutas de observaciones requieren una publicación por consulta. | La pantalla no puede conectarse directamente manteniendo las mismas tarjetas y evitando N+1. |
+| Media | Cotizaciones mock (`pair`, `recorded_at`, número) difieren de API (par de monedas separado, `observed_at`, Decimal string). | Requiere adapter y ajustar el selector de oficial/paralelo. |
+| Media | `rate_side` es `string` en OpenAPI/Pydantic, aunque la base restringe valores y TypeScript usa unión literal. | El contrato estático y el esquema publicado no validan el mismo conjunto de valores. |
+| Media | `FilterBar` captura fechas, pero `CatalogoPage` no las aplica ni conserva. | El filtro visual no cumple su intención actual. |
+| Baja | `categories.json` incluye `description`. | No debe asumirse que la API devuelve ese campo. |
 
-## 10. Dependencias para el Issue #29
+## 9. Decisiones pendientes antes de conectar pantallas
 
-El Issue #29 incluye registro, login y token; esas capacidades no aparecen implementadas en las rutas inspeccionadas. Antes de conectar pantallas:
-1. Revisar y aprobar las correspondencias de este documento.
-2. Resolver las decisiones de categoría, fechas, búsqueda y conteo.
-3. Definir si se requiere endpoint agregado de catálogo.
-4. Separar el trabajo de autenticación o definir su implementación y criterios de seguridad.
-5. Definir URL de API por entorno, CORS, manejo de errores, estados vacíos y carga.
-6. Proteger endpoints de escritura antes de exponer el backend públicamente.
+1. Definir si el filtro categoría se aplica a `Product.category_id`, `StoreProduct.category_id` o ambos; actualmente `/store-products` no tiene filtro de categoría.
+2. Definir el alcance de búsqueda: nombre de producto canónico, nombre de publicación, marca, modelo u otros campos. No existe filtro textual en la API.
+3. Definir el significado del rango de fechas: seleccionar publicaciones observadas en el período y/o elegir el último precio dentro del período. El endpoint de observaciones ofrece `start`/`end`, pero solo para un `store_product_id`.
+4. Definir si “productos monitoreados” cuenta entidades Product únicas o publicaciones StoreProduct.
+5. Elegir entre endpoint agregado de catálogo y composición cliente de las rutas actuales.
+6. Definir adaptación visual de `rate_type` y `rate_side`. `rate_side` no está expresado como enum en OpenAPI.
+7. Acordar estados de carga, error, lista vacía, URL de API por entorno y CORS antes de despliegue.
 
-## 11. Límites de esta revisión
+## 10. Issue #29 y autenticación
 
-- La revisión estática se hizo sobre los archivos indicados en la rama `develop` y el commit de referencia al inicio del documento.
-- No se ejecutó la aplicación ni se consultó una instancia desplegada de OpenAPI en vivo.
-- No se consultó ni modificó Neon.
-- No se modificaron modelos, rutas, servicios, migraciones, mocks ni cliente HTTP.
-- Los valores de los ejemplos JSON son ilustrativos, no datos reales.
+El alcance del Issue #29 mencionado en el proyecto incluye registro/login/token. No se encontraron rutas de autenticación ni esquemas de usuario/token en la aplicación inspeccionada. Debe confirmarse o separarse ese alcance y definirse autenticación y autorización antes de exponer operaciones de escritura. No es una capacidad disponible para integrar actualmente.
+
+## 11. Criterios de aceptación documental y pendientes
+
+Este documento cubre las seis entidades y sus relaciones; diferencia campos requeridos, opcionales y anulables; describe serialización, endpoints, mocks, filtros e incompatibilidades; identifica límites de pantallas y decisiones pendientes; y separa expresamente los contratos vigentes de la propuesta agregada.
+
+La inspección comprobó los esquemas generados por OpenAPI y que no publican ejemplos concretos. No se probó una instancia desplegada ni se validaron respuestas con datos persistidos. La integración frontend/API, el endpoint agregado si se elige, la implementación de filtros faltantes, autenticación/autorización y extractores reales siguen fuera del alcance documental y pendientes.
+
+## 12. Límites de esta revisión
+
+- Se revisaron los archivos de código enumerados arriba en la versión de `develop` indicada en el encabezado y se generó su OpenAPI mediante `app.openapi()`.
+- No se consultó ni modificó Neon y no se ejecutaron migraciones.
+- No se modificaron backend funcional, frontend funcional, mocks, migraciones o servicios.
+- Los datos de los JSON son contenido simulado y no evidencia de integraciones externas.
