@@ -68,6 +68,7 @@ export default function CatalogoPage({
           setOffset(0)
         }}
         initialFilters={{
+          storeId: null,
           categoryId: filters.categoryId,
           dateFrom: null,
           dateTo: null,
