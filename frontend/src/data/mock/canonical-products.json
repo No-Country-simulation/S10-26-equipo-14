@@ -1,0 +1,74 @@
+[
+  {
+    "id": 1,
+    "name": "Arroz blanco 1 kg",
+    "brand": "Marca A",
+    "model": null,
+    "description": "Arroz blanco grano largo",
+    "barcode": "7790000000001",
+    "category_id": 1
+  },
+  {
+    "id": 2,
+    "name": "Azúcar 1 kg",
+    "brand": "Marca B",
+    "model": null,
+    "description": "Azúcar blanca refinada",
+    "barcode": "7790000000002",
+    "category_id": 1
+  },
+  {
+    "id": 3,
+    "name": "Smartphone 128 GB",
+    "brand": "TechX",
+    "model": "S128",
+    "description": "Smartphone 128GB Android",
+    "barcode": "7790000000003",
+    "category_id": 2
+  },
+  {
+    "id": 4,
+    "name": "Detergente lavanda 2L",
+    "brand": "LimpiaTotal",
+    "model": null,
+    "description": "Detergente lavanda aroma",
+    "barcode": "7790000000004",
+    "category_id": 4
+  },
+  {
+    "id": 5,
+    "name": "Leche entera 1L",
+    "brand": "Lacteos del Valle",
+    "model": null,
+    "description": "Leche entera pasteurizada",
+    "barcode": "7790000000005",
+    "category_id": 1
+  },
+  {
+    "id": 6,
+    "name": "Fideos spaghetti 500g",
+    "brand": "Pastora",
+    "model": null,
+    "description": "Fideos secos spaghetti",
+    "barcode": "7790000000006",
+    "category_id": 1
+  },
+  {
+    "id": 7,
+    "name": "Auriculares inalámbricos",
+    "brand": "AudioPro",
+    "model": "AP-200",
+    "description": "Auriculares Bluetooth con micrófono",
+    "barcode": "7790000000007",
+    "category_id": 2
+  },
+  {
+    "id": 8,
+    "name": "Jabón de baño",
+    "brand": "HigienePlus",
+    "model": null,
+    "description": "Jabón de baño glicerina",
+    "barcode": "7790000000008",
+    "category_id": 4
+  }
+]

@@ -16,6 +16,8 @@ interface FilterBarProps {
   categories: Category[]
   onFiltersChange: (filters: FilterState) => void
   initialFilters?: FilterState
+  /** Oculta el selector de tiendas cuando no aplica (p. ej. catálogo canónico sin relación tienda-producto aún). */
+  showStoreFilter?: boolean
 }
 
 export interface FilterState {
@@ -39,6 +41,7 @@ export default function FilterBar({
   categories,
   onFiltersChange,
   initialFilters,
+  showStoreFilter = true,
 }: FilterBarProps) {
   const [filters, setFilters] = React.useState<FilterState>({
     ...DEFAULT_FILTERS,
@@ -54,40 +57,42 @@ export default function FilterBar({
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:gap-4">
-        <div className="flex flex-col gap-2 sm:flex-shrink-0">
-          <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-            Tienda
-          </div>
-          <Select
-            value={filters.storeId ? String(filters.storeId) : null}
-            onValueChange={(value: string | null) =>
-              handleChange("storeId", value === "null" ? null : value ? Number(value) : null)
-            }
-          >
-            <SelectTrigger className="w-[220px] sm:w-full">
-              <SelectValue placeholder="Todas las tiendas">
-                {filters.storeId ? stores.find((s) => s.id === filters.storeId)?.name : null}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent
-              className="bg-white border border-slate-200 shadow-lg z-50"
+        {showStoreFilter && (
+          <div className="flex flex-col gap-2 sm:flex-shrink-0">
+            <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+              Tienda
+            </div>
+            <Select
+              value={filters.storeId ? String(filters.storeId) : null}
+              onValueChange={(value: string | null) =>
+                handleChange("storeId", value === "null" ? null : value ? Number(value) : null)
+              }
             >
-              <div className="scroll-my-1 p-1">
-                <div className="px-1.5 py-1 text-xs text-muted-foreground">
-                  Seleccionar tienda
-                </div>
-                <SelectItem key="all" value="null">
-                  Todas las tiendas
-                </SelectItem>
-                {stores.map((store) => (
-                  <SelectItem key={store.id} value={String(store.id)}>
-                    {store.name}
+              <SelectTrigger className="w-[220px] sm:w-full">
+                <SelectValue placeholder="Todas las tiendas">
+                  {filters.storeId ? stores.find((s) => s.id === filters.storeId)?.name : null}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent
+                className="bg-white border border-slate-200 shadow-lg z-50"
+              >
+                <div className="scroll-my-1 p-1">
+                  <div className="px-1.5 py-1 text-xs text-muted-foreground">
+                    Seleccionar tienda
+                  </div>
+                  <SelectItem key="all" value="null">
+                    Todas las tiendas
                   </SelectItem>
-                ))}
-              </div>
-            </SelectContent>
-          </Select>
-        </div>
+                  {stores.map((store) => (
+                    <SelectItem key={store.id} value={String(store.id)}>
+                      {store.name}
+                    </SelectItem>
+                  ))}
+                </div>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         <div className="flex flex-col gap-2 sm:flex-shrink-0">
           <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">
