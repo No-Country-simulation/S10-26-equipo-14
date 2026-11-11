@@ -39,6 +39,28 @@ class ProductPageOut(BaseModel):
     offset: int
 
 
+class LatestProductPriceOut(BaseModel):
+    amount: str
+    currency: str
+    observed_at: datetime
+    store_id: int
+    store_name: str
+    store_product_id: int
+    source_url: str | None
+    is_available: bool | None
+
+
+class PricedProductOut(ProductOut):
+    latest_price: LatestProductPriceOut | None
+
+
+class PricedProductPageOut(BaseModel):
+    items: list[PricedProductOut]
+    total: int
+    limit: int
+    offset: int
+
+
 class StoreProductCreate(BaseModel):
     store_id: int
     product_id: int | None = None

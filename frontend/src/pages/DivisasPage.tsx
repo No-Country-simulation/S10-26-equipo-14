@@ -1,181 +1,263 @@
-import React from 'react'
-import { prices } from '@/data/mock'
-import { exchangeRates } from '@/data/mock'
-import { stores } from '@/data/mock'
-import { categories } from '@/data/mock'
-import { products } from '@/data/mock'
-import DualAxisTimeSeriesChart from '@/components/charts/DualAxisTimeSeriesChart'
-import FilterBar from '@/components/filters/FilterBar'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import React from "react"
 
-type RawPrice = {
-  id: number
-  product_id: number
-  store_id: number
-  amount: number | string
-  currency: string
-  observed_at: string
-}
+import DualAxisTimeSeriesChart from "@/components/charts/DualAxisTimeSeriesChart"
+import FilterBar, { type FilterState } from "@/components/filters/FilterBar"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { ApiError, apiClient } from "@/lib/api"
+import type { Category, ExchangeRate, PriceObservation, Store } from "@/types"
 
-type RawRate = {
-  id: number
-  rate: number | string
-  source: string
-  recorded_at: string
+const PAGE_LIMIT = 1000
+
+function errorMessage(error: unknown): string {
+  if (error instanceof ApiError) return error.message
+  if (error instanceof Error) return error.message
+  return "No se pudieron cargar las observaciones de PriceScope."
 }
 
 function groupByDate(items: { observed_at: string; value: number }[]) {
-  const grouped = new Map<string, number>()
+  const grouped = new Map<string, { total: number; count: number }>()
   for (const item of items) {
-    const day = item.observed_at.split('T')[0]
-    const prev = grouped.get(day) ?? 0
-    grouped.set(day, prev + item.value)
+    const day = item.observed_at.slice(0, 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(item.value)) continue
+    const current = grouped.get(day) ?? { total: 0, count: 0 }
+    grouped.set(day, { total: current.total + item.value, count: current.count + 1 })
   }
-  return Array.from(grouped.entries()).map(([date, value]) => ({
+  return Array.from(grouped.entries()).sort(([left], [right]) => left.localeCompare(right)).map(([date, data]) => ({
     date,
-    value,
+    value: data.total / data.count,
   }))
 }
 
 function mergeSeries(
   priceByDate: { date: string; value: number }[],
-  rateByDate: { date: string; value: number }[]
+  rateByDate: { date: string; value: number }[],
 ) {
-  const allDates = new Set([...priceByDate.map((d) => d.date), ...rateByDate.map((d) => d.date)])
-  const priceMap = new Map(priceByDate.map((d) => [d.date, d.value]))
-  const rateMap = new Map(rateByDate.map((d) => [d.date, d.value]))
+  const allDates = new Set([...priceByDate.map((item) => item.date), ...rateByDate.map((item) => item.date)])
+  const priceMap = new Map(priceByDate.map((item) => [item.date, item.value]))
+  const rateMap = new Map(rateByDate.map((item) => [item.date, item.value]))
+  return Array.from(allDates).sort().map((date) => ({
+    date,
+    price: priceMap.get(date) ?? null,
+    rate: rateMap.get(date) ?? null,
+  }))
+}
 
-  return Array.from(allDates)
-    .sort()
-    .map((date) => ({
-      date,
-      price: priceMap.get(date) ?? null,
-      rate: rateMap.get(date) ?? null,
-    }))
+function dateBoundary(date: string | null, endOfDay = false): string | undefined {
+  if (!date) return undefined
+  return `${date}T${endOfDay ? "23:59:59.999" : "00:00:00"}Z`
 }
 
 export default function DivisasPage() {
-  const [filters, setFilters] = React.useState<{
-    storeId: number | null
-    categoryId: number | null
-    dateFrom: string | null
-    dateTo: string | null
-  }>({ storeId: null, categoryId: null, dateFrom: null, dateTo: null })
+  const [filters, setFilters] = React.useState<FilterState>({
+    storeId: null,
+    categoryId: null,
+    dateFrom: null,
+    dateTo: null,
+    search: "",
+  })
+  const [stores, setStores] = React.useState<Store[]>([])
+  const [categories, setCategories] = React.useState<Category[]>([])
+  const [observations, setObservations] = React.useState<PriceObservation[]>([])
+  const [exchangeRates, setExchangeRates] = React.useState<ExchangeRate[]>([])
+  const [loadingFilters, setLoadingFilters] = React.useState(true)
+  const [loadingSeries, setLoadingSeries] = React.useState(true)
+  const [error, setError] = React.useState<string | null>(null)
+  const [retry, setRetry] = React.useState(0)
 
-  // Mapa producto_id -> category_id para filtrar precios por categoría
-  const productCategoryMap = new Map(products.map((p) => [p.id, p.category_id]))
-
-  // Filtrar precios por tienda, categoría y rango de fechas
-  let filteredPrices = prices as unknown as RawPrice[]
-  if (filters.storeId) {
-    filteredPrices = filteredPrices.filter((p) => p.store_id === filters.storeId)
-  }
-  if (filters.categoryId) {
-    filteredPrices = filteredPrices.filter(
-      (p) => productCategoryMap.get(p.product_id) === filters.categoryId
-    )
-  }
-  if (filters.dateFrom) {
-    filteredPrices = filteredPrices.filter((p) => p.observed_at >= filters.dateFrom + 'T00:00:00Z')
-  }
-  if (filters.dateTo) {
-    filteredPrices = filteredPrices.filter((p) => p.observed_at <= filters.dateTo + 'T23:59:59Z')
+  const retryRequests = () => {
+    setError(null)
+    setLoadingFilters(true)
+    setLoadingSeries(true)
+    setRetry((value) => value + 1)
   }
 
-  // Filtrar tipos de cambio por rango de fechas
-  let filteredRates = exchangeRates as unknown as RawRate[]
-  if (filters.dateFrom) {
-    filteredRates = filteredRates.filter((r) => r.recorded_at >= filters.dateFrom + 'T00:00:00Z')
-  }
-  if (filters.dateTo) {
-    filteredRates = filteredRates.filter((r) => r.recorded_at <= filters.dateTo + 'T23:59:59Z')
+  const updateFilters = (next: FilterState) => {
+    setLoadingSeries(true)
+    setFilters(next)
   }
 
-  // Agregar precios por fecha (promedio simple por día)
-  const priceByDate = groupByDate(
-    filteredPrices.map((p) => ({ observed_at: p.observed_at, value: Number(p.amount) }))
+  React.useEffect(() => {
+    const controller = new AbortController()
+    let active = true
+    void Promise.all([
+      apiClient.fetchStores(controller.signal),
+      apiClient.fetchCategories(controller.signal),
+    ])
+      .then(([loadedStores, loadedCategories]) => {
+        if (!active) return
+        setStores(loadedStores)
+        setCategories(loadedCategories)
+        setError(null)
+      })
+      .catch((cause: unknown) => {
+        if (active && !(cause instanceof Error && cause.name === "AbortError")) {
+          setError(errorMessage(cause))
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingFilters(false)
+      })
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [retry])
+
+  React.useEffect(() => {
+    const controller = new AbortController()
+    let active = true
+    const query = {
+      store_id: filters.storeId ?? undefined,
+      category_id: filters.categoryId ?? undefined,
+      start: dateBoundary(filters.dateFrom),
+      end: dateBoundary(filters.dateTo, true),
+      search: filters.search.trim() || undefined,
+      limit: PAGE_LIMIT,
+    }
+    void Promise.all([
+      apiClient.fetchPriceObservations(query, controller.signal),
+      apiClient.fetchExchangeRates({ start: query.start, end: query.end, limit: PAGE_LIMIT }, controller.signal),
+    ])
+      .then(([loadedObservations, loadedRates]) => {
+        if (!active) return
+        setObservations(loadedObservations)
+        setExchangeRates(loadedRates)
+        setError(null)
+      })
+      .catch((cause: unknown) => {
+        if (!active || (cause instanceof Error && cause.name === "AbortError")) return
+        setObservations([])
+        setExchangeRates([])
+        setError(errorMessage(cause))
+      })
+      .finally(() => {
+        if (active) setLoadingSeries(false)
+      })
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [filters.categoryId, filters.dateFrom, filters.dateTo, filters.search, filters.storeId, retry])
+
+  const arsObservations = observations.filter((item) => item.currency === "ARS")
+  const arsUsdReferenceRates = exchangeRates.filter(
+    (item) => item.base_currency === "USD" && item.quote_currency === "ARS" && item.rate_side === "reference",
   )
-
-  // Agregar tipos de cambio por fecha (promedio simple por día)
-  const rateByDate = groupByDate(
-    filteredRates.map((r) => ({ observed_at: r.recorded_at, value: Number(r.rate) }))
-  )
-
+  const priceByDate = groupByDate(arsObservations.map((item) => ({
+    observed_at: item.observed_at,
+    value: Number(item.amount),
+  })))
+  const rateByDate = groupByDate(arsUsdReferenceRates.map((item) => ({
+    observed_at: item.observed_at,
+    value: Number(item.rate),
+  })))
   const chartData = mergeSeries(priceByDate, rateByDate)
-
-  const selectedStore = filters.storeId ? stores.find((s) => s.id === filters.storeId)?.name : null
+  const hasSyntheticRates = arsUsdReferenceRates.some((item) => /demo|sint[eé]tic|synthetic/i.test(item.source))
+  const seriesWithData = [priceByDate.length, rateByDate.length].filter((days) => days > 0)
+  const hasInsufficientHistory = seriesWithData.some((days) => days < 2)
+  const selectedStore = filters.storeId ? stores.find((store) => store.id === filters.storeId)?.name : null
   const selectedCategory = filters.categoryId
-    ? categories.find((c) => c.id === filters.categoryId)?.name
+    ? categories.find((category) => category.id === filters.categoryId)?.name
     : null
+  const loading = loadingFilters || loadingSeries
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-8 space-y-6">
+    <section className="mx-auto max-w-7xl space-y-6 px-4 py-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Divisas y precios — serie temporal</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Compará la evolución de los precios (ARS) con el tipo de cambio (ARS/USD) en un mismo
-            eje de tiempo.
+            Compará observaciones en ARS con cotizaciones de referencia USD/ARS guardadas en PriceScope.
           </p>
         </div>
       </div>
 
+      {error && (
+        <div role="alert" className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={retryRequests}
+            className="rounded-lg border border-rose-300 px-3 py-1.5 font-semibold hover:bg-rose-100"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {(observations.length >= PAGE_LIMIT || exchangeRates.length >= PAGE_LIMIT) && !loading && (
+        <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          Se alcanzó el máximo de {PAGE_LIMIT.toLocaleString("es-AR")} registros por consulta. El gráfico puede omitir datos adicionales; reduce el rango de fechas o usa los filtros.
+        </p>
+      )}
+
       <FilterBar
         stores={stores}
         categories={categories}
-        onFiltersChange={(next) => setFilters(next)}
-        initialFilters={{
-          storeId: filters.storeId,
-          categoryId: filters.categoryId,
-          dateFrom: filters.dateFrom,
-          dateTo: filters.dateTo,
-          search: '',
-        }}
+        onFiltersChange={updateFilters}
+        initialFilters={filters}
       />
 
       <Card className="border-slate-200 bg-white">
         <CardHeader>
           <CardTitle className="text-sm font-semibold">Precio vs tipo de cambio</CardTitle>
           <CardDescription className="text-xs text-slate-500">
-            Eje izquierdo: precio promedio en ARS · Eje derecho: tipo de cambio en ARS por USD
+            Precio promedio diario (ARS) · cotización de referencia promedio (ARS por USD)
             {selectedStore && ` · Tienda: ${selectedStore}`}
             {selectedCategory && ` · Categoría: ${selectedCategory}`}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <DualAxisTimeSeriesChart
-            data={chartData}
-            title="Evolución diaria de precios y tipo de cambio"
-            subtitle="Datos de mock — fuente: precios y cotizaciones del catálogo"
-          />
+          {hasSyntheticRates && !loading && (
+            <p role="note" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Las cotizaciones mostradas son datos sintéticos de demostración; no representan valores reales.
+            </p>
+          )}
+          {loading ? (
+            <div className="flex h-64 items-center justify-center text-sm text-slate-500" aria-live="polite">
+              Cargando series de la API…
+            </div>
+          ) : chartData.length === 0 ? (
+            <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-300 text-center text-sm text-slate-500">
+              No hay observaciones ni cotizaciones para este filtro.
+            </div>
+          ) : (
+            <>
+              {hasInsufficientHistory && (
+                <p role="status" className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+                  Una o más series tienen datos de menos de dos días; sus puntos no muestran una evolución temporal.
+                </p>
+              )}
+              <DualAxisTimeSeriesChart
+                data={chartData}
+                title="Evolución diaria de precios y tipo de cambio"
+                subtitle="Promedios diarios calculados a partir de los registros recibidos desde la API"
+              />
+            </>
+          )}
         </CardContent>
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Observaciones de precio</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle className="text-sm">Observaciones de precio</CardTitle></CardHeader>
           <CardContent className="text-sm text-slate-600">
-            <p>Registros filtrados: {filteredPrices.length}</p>
-            <p>Días con datos: {priceByDate.length}</p>
+            <p>Registros ARS: {loading ? "…" : arsObservations.length}</p>
+            <p>Días con datos: {loading ? "…" : priceByDate.length}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Cotizaciones</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle className="text-sm">Cotizaciones</CardTitle></CardHeader>
           <CardContent className="text-sm text-slate-600">
-            <p>Registros filtrados: {filteredRates.length}</p>
-            <p>Días con datos: {rateByDate.length}</p>
+            <p>USD/ARS referencia: {loading ? "…" : arsUsdReferenceRates.length}</p>
+            <p>Días con datos: {loading ? "…" : rateByDate.length}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Rango de fechas</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle className="text-sm">Rango de fechas</CardTitle></CardHeader>
           <CardContent className="text-sm text-slate-600">
-            <p>{chartData.length > 0 ? chartData[0].date : '—'} — {chartData.length > 0 ? chartData[chartData.length - 1].date : '—'}</p>
+            <p>{chartData.length > 0 ? `${chartData[0].date} — ${chartData[chartData.length - 1].date}` : "—"}</p>
+            {loadingFilters && <p className="mt-1">Cargando filtros…</p>}
           </CardContent>
         </Card>
       </div>

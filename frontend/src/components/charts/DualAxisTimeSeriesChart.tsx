@@ -8,7 +8,6 @@ import {
   Tooltip,
   Legend,
 } from 'recharts'
-import type { TooltipProps } from 'recharts'
 
 interface SeriesPoint {
   date: string
@@ -23,14 +22,52 @@ interface DualAxisTimeSeriesChartProps {
   className?: string
 }
 
-function formatTooltipValue(value: number | null, prefix: string, decimals: number) {
-  if (value === null) return '—'
-  return `${prefix} ${value.toFixed(decimals)}`
+interface TooltipPoint {
+  payload?: SeriesPoint
+}
+
+interface ChartTooltipProps {
+  active?: boolean
+  payload?: TooltipPoint[]
+  hasPriceData: boolean
+  hasRateData: boolean
+}
+
+const numberFormat = new Intl.NumberFormat('es-AR', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+function formatAmount(value: number | null | undefined) {
+  return value == null || !Number.isFinite(value) ? '—' : numberFormat.format(value)
+}
+
+function formatAxisAmount(value: number) {
+  return new Intl.NumberFormat('es-AR', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
 }
 
 function formatDateLabel(value: string) {
-  const d = new Date(value)
-  return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return value
+  // Construct a local calendar date so YYYY-MM-DD is not shifted by the browser timezone.
+  return new Date(year, month - 1, day).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
+}
+
+function ChartTooltip({ active, payload, hasPriceData, hasRateData }: ChartTooltipProps) {
+  const point = payload?.[0]?.payload
+  if (!active || !point) return null
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-900 shadow-md">
+      <div className="mb-1 font-medium text-slate-700">{formatDateLabel(point.date)}</div>
+      {hasPriceData && point.price !== null && (
+        <div className="text-blue-700">Precio promedio: ARS {formatAmount(point.price)}</div>
+      )}
+      {hasRateData && point.rate !== null && (
+        <div className="text-violet-700">Cotización USD/ARS: {formatAmount(point.rate)} ARS por USD</div>
+      )}
+    </div>
+  )
 }
 
 export default function DualAxisTimeSeriesChart({
@@ -39,36 +76,8 @@ export default function DualAxisTimeSeriesChart({
   subtitle,
   className,
 }: DualAxisTimeSeriesChartProps) {
-  const hasPriceData = data.some((d) => d.price !== null)
-  const hasRateData = data.some((d) => d.rate !== null)
-
-  const customTooltip = ({ active, payload }: TooltipProps<any, any>) => {
-    if (active !== true || !payload || !payload.length) {
-      return null
-    }
-    const date = payload[0].payload?.date as string | undefined
-      const pricePayload = (payload as unknown as { payload?: SeriesPoint }[]).find(
-        (p) => p.payload?.price !== null
-      )
-      const ratePayload = (payload as unknown as { payload?: SeriesPoint }[]).find(
-        (p) => p.payload?.rate !== null
-      )
-
-      const price = (pricePayload?.payload?.price ?? null) as number | null
-      const rate = (ratePayload?.payload?.rate ?? null) as number | null
-
-      return (
-        <div className="p-3 border border-slate-200 rounded-lg bg-white text-sm text-slate-900 shadow-md">
-          <div className="font-medium text-slate-700">{date ? formatDateLabel(date) : '—'}</div>
-          {hasPriceData && (
-            <div className="text-blue-600">{formatTooltipValue(price, 'Precio:', 2)} ARS</div>
-          )}
-          {hasRateData && (
-            <div className="text-indigo-600">{formatTooltipValue(rate, 'Tipo de cambio:', 2)} ARS/USD</div>
-          )}
-        </div>
-      )
-    }
+  const hasPriceData = data.some((point) => point.price !== null)
+  const hasRateData = data.some((point) => point.rate !== null)
 
   return (
     <div className={className}>
@@ -78,54 +87,79 @@ export default function DualAxisTimeSeriesChart({
           {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
         </div>
       )}
-      <div className="h-64 w-full border border-slate-200 bg-slate-50 relative pl-8 pr-8">
+      <div className="relative h-72 w-full border border-slate-200 bg-slate-50 px-2 sm:px-3">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 10, left: 20, right: 70, bottom: 5 }}>
+          <LineChart data={data} margin={{ top: 14, left: 4, right: 8, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="date"
               tickFormatter={formatDateLabel}
               tick={{ fontSize: 12, fill: '#64748b' }}
               axisLine={{ stroke: '#cbd5e1' }}
+              minTickGap={18}
             />
             {hasPriceData && (
               <YAxis
+                yAxisId="price"
                 orientation="left"
-                label={{ value: 'Precio (ARS)', angle: -90, position: 'left', offset: 0 }}
-                tick={{ fontSize: 12, fill: '#64748b' }}
-                axisLine={{ stroke: '#cbd5e1' }}
-                tickFormatter={(v) => `$${v}`}
+                width={62}
+                domain={['auto', 'auto']}
+                label={{ value: 'Precio promedio (ARS)', angle: -90, position: 'insideLeft', offset: 5, fontSize: 11 }}
+                tick={{ fontSize: 11, fill: '#1d4ed8' }}
+                axisLine={{ stroke: '#93c5fd' }}
+                tickFormatter={formatAxisAmount}
               />
             )}
             {hasRateData && (
               <YAxis
+                yAxisId="rate"
                 orientation="right"
-                label={{ value: 'Tipo de cambio (ARS/USD)', angle: -90, position: 'right', offset: 0 }}
-                tick={{ fontSize: 12, fill: '#64748b' }}
-                axisLine={{ stroke: '#cbd5e1' }}
-                tickFormatter={(v) => `$${v}`}
+                width={68}
+                domain={['auto', 'auto']}
+                label={{ value: 'Cotización (ARS por USD)', angle: 90, position: 'insideRight', offset: 5, fontSize: 11 }}
+                tick={{ fontSize: 11, fill: '#6d28d9' }}
+                axisLine={{ stroke: '#c4b5fd' }}
+                tickFormatter={formatAxisAmount}
               />
             )}
-            <Tooltip content={customTooltip} />
+            <Tooltip
+              content={(props) => (
+                <ChartTooltip
+                  active={props.active}
+                  payload={props.payload as TooltipPoint[] | undefined}
+                  hasPriceData={hasPriceData}
+                  hasRateData={hasRateData}
+                />
+              )}
+            />
             <Legend />
             {hasPriceData && (
               <Line
-                type="monotone"
+                yAxisId="price"
+                type="linear"
                 dataKey="price"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                dot={false}
-                name="Precio"
+                stroke="#2563eb"
+                strokeWidth={2.5}
+                dot={{ r: 3, fill: '#2563eb' }}
+                activeDot={{ r: 5 }}
+                connectNulls={false}
+                name="Precio promedio (ARS)"
+                isAnimationActive={false}
               />
             )}
             {hasRateData && (
               <Line
-                type="monotone"
+                yAxisId="rate"
+                type="linear"
                 dataKey="rate"
-                stroke="#4f46e5"
-                strokeWidth={2}
-                dot={false}
-                name="Tipo de cambio"
+                stroke="#7c3aed"
+                strokeWidth={2.5}
+                strokeDasharray="6 3"
+                dot={{ r: 3, fill: '#7c3aed' }}
+                activeDot={{ r: 5 }}
+                connectNulls={false}
+                name="Cotización USD/ARS (ARS por USD)"
+                isAnimationActive={false}
               />
             )}
           </LineChart>

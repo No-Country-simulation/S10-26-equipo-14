@@ -119,6 +119,134 @@ def test_products_paginated_limit_offset_and_category_filter(client):
     assert payload["offset"] == 1
 
 
+def test_products_paginated_search_applies_before_offset_and_total(client):
+    from app.models import Product
+
+    with _manual_db_session() as session:
+        session.add_all([
+            Product(name="DEMO Café molido"),
+            Product(name="DEMO Café en grano"),
+            Product(name="DEMO Té negro"),
+        ])
+        session.commit()
+
+    response = client.get("/api/v1/products/paginated", params={"search": "café", "limit": 1, "offset": 1})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    assert payload["items"][0]["name"] == "DEMO Café molido"
+
+
+def test_priced_product_search_and_date_range_select_matching_observation(client):
+    from app.models import Category, PriceObservation, Product, Store, StoreProduct
+
+    with _manual_db_session() as session:
+        category = Category(name="DEMO Café", slug="demo-cafe")
+        store = Store(name="DEMO Shop", base_url="https://shop.demo.invalid")
+        session.add_all([category, store])
+        session.flush()
+        in_range = Product(name="DEMO Café molido", category_id=category.id)
+        out_of_range = Product(name="DEMO Café viejo", category_id=category.id)
+        session.add_all([in_range, out_of_range])
+        session.flush()
+        listings = [
+            StoreProduct(store_id=store.id, product_id=product.id, category_id=category.id,
+                         product_url=f"https://shop.demo.invalid/{index}", product_name=product.name)
+            for index, product in enumerate((in_range, out_of_range), start=1)
+        ]
+        session.add_all(listings)
+        session.flush()
+        session.add_all([
+            PriceObservation(store_product_id=listings[0].id, amount="101.00", currency="ARS",
+                             observed_at=datetime(2026, 1, 2, tzinfo=timezone.utc)),
+            PriceObservation(store_product_id=listings[1].id, amount="90.00", currency="ARS",
+                             observed_at=datetime(2025, 12, 31, tzinfo=timezone.utc)),
+        ])
+        session.commit()
+
+    response = client.get("/api/v1/products/paginated-with-prices", params={
+        "search": "café", "category_id": category.id,
+        "start": "2026-01-01T00:00:00Z", "end": "2026-01-03T00:00:00Z",
+    })
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["name"] == "DEMO Café molido"
+    assert payload["items"][0]["latest_price"]["amount"] == "101.00"
+
+
+def test_price_observations_can_search_canonical_or_listing_name(client):
+    from app.models import Category, PriceObservation, Product, Store, StoreProduct
+
+    with _manual_db_session() as session:
+        category = Category(name="DEMO Cocina", slug="demo-cocina")
+        store = Store(name="DEMO Shop", base_url="https://shop.demo.invalid")
+        session.add_all([category, store])
+        session.flush()
+        product = Product(name="DEMO Producto canónico", category_id=category.id)
+        session.add(product)
+        session.flush()
+        listing = StoreProduct(store_id=store.id, product_id=product.id, category_id=category.id,
+                               product_url="https://shop.demo.invalid/item", product_name="DEMO Café paquete")
+        session.add(listing)
+        session.flush()
+        session.add(PriceObservation(store_product_id=listing.id, amount="25.00", currency="ARS",
+                                     observed_at=datetime(2026, 1, 2, tzinfo=timezone.utc)))
+        session.commit()
+        store_id, category_id = store.id, category.id
+
+    response = client.get("/api/v1/price-observations", params={
+        "store_id": store_id, "category_id": category_id, "search": "café",
+    })
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+def test_products_with_latest_prices_keeps_products_without_observations(client):
+    from app.models import PriceObservation, Product, Store, StoreProduct
+
+    with _manual_db_session() as session:
+        store = Store(name="Tienda real fixture", base_url="https://shop.test")
+        priced = Product(name="Producto con observación")
+        empty = Product(name="Producto sin observación")
+        session.add_all([store, priced, empty])
+        session.flush()
+        listing = StoreProduct(
+            store_id=store.id,
+            product_id=priced.id,
+            product_url="https://shop.test/item",
+            product_name=priced.name,
+        )
+        session.add(listing)
+        session.flush()
+        session.add_all([
+            PriceObservation(
+                store_product_id=listing.id,
+                amount="999999.00",
+                currency="ARS",
+                source_url=listing.product_url,
+                observed_at=datetime(2026, 10, 10, 20, tzinfo=timezone.utc),
+            ),
+            PriceObservation(
+                store_product_id=listing.id,
+                amount="1086665.88",
+                currency="ARS",
+                source_url=listing.product_url,
+                observed_at=datetime(2026, 11, 10, 20, tzinfo=timezone.utc),
+            ),
+        ])
+        session.commit()
+
+    response = client.get("/api/v1/products/paginated-with-prices", params={"limit": 10})
+    assert response.status_code == 200
+    payload = response.json()
+    by_name = {item["name"]: item for item in payload["items"]}
+    assert by_name["Producto con observación"]["latest_price"]["amount"] == "1086665.88"
+    assert by_name["Producto con observación"]["latest_price"]["currency"] == "ARS"
+    assert by_name["Producto con observación"]["latest_price"]["store_name"] == "Tienda real fixture"
+    assert by_name["Producto sin observación"]["latest_price"] is None
+
+
 def test_product_by_id_returns_product_and_404_for_missing(client):
     from app.models import Product
 
