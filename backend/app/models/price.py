@@ -16,6 +16,8 @@ class PriceObservation(Base):
         UniqueConstraint("store_product_id", "observed_at", name="uq_price_observations_product_time"),
         CheckConstraint("amount > 0", name="ck_price_observations_amount_positive"),
         CheckConstraint("promotional_price IS NULL OR promotional_price > 0", name="ck_price_observations_promo_positive"),
+        CheckConstraint("observed_package_quantity IS NULL OR observed_package_quantity > 0", name="ck_price_observations_package_quantity_positive"),
+        CheckConstraint("observed_package_count IS NULL OR observed_package_count > 0", name="ck_price_observations_package_count_positive"),
         Index("ix_price_observations_product_observed", "store_product_id", "observed_at"),
     )
 
@@ -23,6 +25,11 @@ class PriceObservation(Base):
     store_product_id: Mapped[int] = mapped_column(ForeignKey("store_products.id", ondelete="RESTRICT"), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     promotional_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    # Explicitly observed presentation at this timestamp. NULL means unknown;
+    # canonical product metadata is not back-projected into historical records.
+    observed_package_quantity: Mapped[Decimal | None] = mapped_column(Numeric(14, 6))
+    observed_package_unit: Mapped[str | None] = mapped_column(String(20))
+    observed_package_count: Mapped[int | None] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="ARS", server_default="ARS")
     source_url: Mapped[str | None] = mapped_column(Text)
     # NULL means that the source did not provide availability information.

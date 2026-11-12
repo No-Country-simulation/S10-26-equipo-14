@@ -1,8 +1,12 @@
 const stack = [
   { name: 'Frontend', value: 'React + TypeScript + Vite + Tailwind CSS' },
-  { name: 'Extracción de datos', value: 'Python (Playwright o BeautifulSoup)' },
-  { name: 'Backend', value: 'Por definir con el equipo' },
-  { name: 'Base de datos', value: 'PostgreSQL' },
+  { name: 'Backend', value: 'Python + FastAPI + SQLAlchemy + Pydantic' },
+  { name: 'Base de datos', value: 'PostgreSQL (Neon) + Alembic' },
+  { name: 'Infraestructura', value: 'Frontend en Vercel + API en Render' },
+  {
+    name: 'Ingesta de datos',
+    value: 'Adaptadores y extracción manual local en desarrollo; sin ejecución periódica',
+  },
 ]
 
 export default function AboutPage() {
@@ -12,16 +16,17 @@ export default function AboutPage() {
         Acerca de PriceScope
       </h1>
       <p className="mt-4 leading-relaxed text-slate-600">
-        PriceScope es una plataforma de analítica económica que automatiza la
-        recolección, el seguimiento y el análisis histórico de precios de
-        productos en diferentes tiendas de comercio electrónico, relacionándolos
-        con la evolución de las cotizaciones cambiarias.
+        PriceScope es una aplicación en desarrollo para consultar productos,
+        tiendas, observaciones históricas de precios y cotizaciones cambiarias
+        mediante su API. El MVP permite explorar el catálogo y visualizar series
+        construidas con los registros disponibles.
       </p>
       <p className="mt-4 leading-relaxed text-slate-600">
-        La recopilación manual de precios y su conversión a distintas monedas
-        genera retrasos, errores y dificultades para identificar variaciones
-        reales del mercado. PriceScope busca resolverlo con un flujo completo de
-        datos confiables y visualizaciones claras.
+        Los datos sintéticos del entorno local de demostración no representan
+        precios actuales. El cálculo de inflación, las comparativas, las alertas
+        y la extracción periódica aún no están implementados. Los adaptadores de
+        ingesta y la extracción manual local siguen en desarrollo; no hay
+        ejecuciones programadas.
       </p>
 
       <h2 className="mt-10 text-xl font-semibold text-slate-900">
@@ -39,7 +44,7 @@ export default function AboutPage() {
       </dl>
 
       <p className="mt-10 text-sm text-slate-500">
-        NoCountry — Simulación laboral S10-26, Equipo 14.
+        No Country — Simulación laboral S10-26, Equipo 14.
       </p>
     </section>
   )

@@ -13,8 +13,14 @@ down_revision: Union[str, Sequence[str], None] = "4db267e3b121"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+ID_TYPE = sa.BigInteger().with_variant(sa.Integer(), "sqlite")
+
 
 def upgrade() -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        _upgrade_sqlite()
+        return
+
     op.add_column("products", sa.Column("barcode", sa.String(64), nullable=True))
     op.create_unique_constraint("uq_products_barcode", "products", ["barcode"])
 
@@ -48,6 +54,47 @@ def upgrade() -> None:
     )
 
 
+def _upgrade_sqlite() -> None:
+    # SQLite supports these schema changes through Alembic's table-rebuild mode.
+    with op.batch_alter_table("products", recreate="always") as batch:
+        batch.add_column(sa.Column("barcode", sa.String(64), nullable=True))
+        batch.create_unique_constraint("uq_products_barcode", ["barcode"])
+
+    with op.batch_alter_table("store_products", recreate="always") as batch:
+        batch.add_column(sa.Column("category_id", ID_TYPE, nullable=True))
+        batch.create_foreign_key(
+            "fk_store_products_category_id_categories",
+            "categories",
+            ["category_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
+        batch.create_index("ix_store_products_category_id", ["category_id"])
+
+    with op.batch_alter_table("price_observations", recreate="always") as batch:
+        batch.add_column(sa.Column("promotional_price", sa.Numeric(14, 2), nullable=True))
+        batch.add_column(sa.Column("source_url", sa.Text(), nullable=True))
+        batch.add_column(sa.Column("is_available", sa.Boolean(), nullable=True))
+        batch.create_check_constraint(
+            "ck_price_observations_promo_positive",
+            "promotional_price IS NULL OR promotional_price > 0",
+        )
+
+    with op.batch_alter_table("exchange_rates", recreate="always") as batch:
+        batch.add_column(
+            sa.Column("rate_side", sa.String(10), server_default="reference", nullable=False)
+        )
+        batch.drop_constraint("uq_exchange_rates_observation", type_="unique")
+        batch.create_check_constraint(
+            "ck_exchange_rates_rate_side",
+            "rate_side IN ('reference', 'buy', 'sell')",
+        )
+        batch.create_unique_constraint(
+            "uq_exchange_rates_observation",
+            ["source", "rate_type", "rate_side", "base_currency", "quote_currency", "observed_at"],
+        )
+
+
 def downgrade() -> None:
     has_buy_or_sell = op.get_bind().execute(sa.text(
         "SELECT EXISTS (SELECT 1 FROM exchange_rates WHERE rate_side IN ('buy', 'sell'))"
@@ -57,6 +104,10 @@ def downgrade() -> None:
             "Cannot downgrade while buy/sell exchange observations exist; "
             "that would erase the distinction between rate sides"
         )
+
+    if op.get_bind().dialect.name == "sqlite":
+        _downgrade_sqlite()
+        return
 
     op.drop_constraint("uq_exchange_rates_observation", "exchange_rates", type_="unique")
     op.drop_constraint("ck_exchange_rates_rate_side", "exchange_rates", type_="check")
@@ -77,3 +128,29 @@ def downgrade() -> None:
 
     op.drop_constraint("uq_products_barcode", "products", type_="unique")
     op.drop_column("products", "barcode")
+
+
+def _downgrade_sqlite() -> None:
+    with op.batch_alter_table("exchange_rates", recreate="always") as batch:
+        batch.drop_constraint("uq_exchange_rates_observation", type_="unique")
+        batch.drop_constraint("ck_exchange_rates_rate_side", type_="check")
+        batch.drop_column("rate_side")
+        batch.create_unique_constraint(
+            "uq_exchange_rates_observation",
+            ["source", "rate_type", "base_currency", "quote_currency", "observed_at"],
+        )
+
+    with op.batch_alter_table("price_observations", recreate="always") as batch:
+        batch.drop_constraint("ck_price_observations_promo_positive", type_="check")
+        batch.drop_column("is_available")
+        batch.drop_column("source_url")
+        batch.drop_column("promotional_price")
+
+    with op.batch_alter_table("store_products", recreate="always") as batch:
+        batch.drop_index("ix_store_products_category_id")
+        batch.drop_constraint("fk_store_products_category_id_categories", type_="foreignkey")
+        batch.drop_column("category_id")
+
+    with op.batch_alter_table("products", recreate="always") as batch:
+        batch.drop_constraint("uq_products_barcode", type_="unique")
+        batch.drop_column("barcode")

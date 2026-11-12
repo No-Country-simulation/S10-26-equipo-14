@@ -1,10 +1,11 @@
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
 
 const ROUTE_LABELS: Record<string, string> = {
   '/': 'Tablero',
   '/catalogo': 'Catálogo',
   '/divisas': 'Divisas',
+  '/tiendas': 'Tiendas',
   '/comparativas': 'Comparativas',
   '/alertas': 'Alertas',
   '/about': 'Acerca de',
@@ -33,9 +34,9 @@ export default function Breadcrumbs() {
           {crumb.isLast ? (
             <span className="text-slate-900 font-medium">{crumb.label}</span>
           ) : (
-            <a href={crumb.path} className="hover:text-indigo-600 underline underline-offset-4">
+            <Link to={crumb.path} className="hover:text-indigo-600 underline underline-offset-4">
               {crumb.label}
-            </a>
+            </Link>
           )}
         </span>
       ))}

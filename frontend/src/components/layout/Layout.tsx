@@ -10,16 +10,18 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900">
-      <TopBar onToggleSidebar={() => setSidebarOpen((prev) => !prev)} />
+      <TopBar onToggleSidebar={() => setSidebarOpen((prev) => !prev)} sidebarOpen={sidebarOpen} />
 
       <div className="flex flex-1 overflow-hidden relative">
         {sidebarOpen && (
-          <div
-            className="fixed inset-0 bg-black/40 z-40 md:hidden"
+          <button
+            type="button"
+            aria-label="Cerrar menú de navegación"
+            className="fixed inset-0 z-10 cursor-default bg-black/40 md:hidden"
             onClick={() => setSidebarOpen(false)}
           />
         )}
-        <Sidebar open={sidebarOpen} />
+        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <main className="flex-1 w-full overflow-y-auto bg-slate-50">
           <div className="mx-auto max-w-6xl px-4 py-8">
             <Breadcrumbs />
