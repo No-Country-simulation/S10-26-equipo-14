@@ -117,8 +117,9 @@ def test_production_reads_and_management_access_are_public(public_context, monke
         response = client.get(path)
         assert response.status_code == 200, (path, response.text)
 
-    private_response = client.get("/api/v1/store-products")
-    assert private_response.status_code == 404
+    store_products_response = client.get("/api/v1/store-products")
+    assert store_products_response.status_code == 200
+    assert isinstance(store_products_response.json(), list)
 
 
 def test_public_writes_do_not_require_admin_token(public_context):
