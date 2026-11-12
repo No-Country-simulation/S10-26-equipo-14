@@ -1,0 +1,29 @@
+name: Refresh live market data
+
+on:
+  push:
+    branches: [develop]
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh-usd-ars:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Refresh official USD/ARS quote
+        run: |
+          curl --fail --silent --show-error --max-time 25 \
+            "https://pricescope-api.onrender.com/api/v1/exchange-rates?rate_type=official&limit=1"
+      - name: Refresh parallel USD/ARS quote
+        run: |
+          curl --fail --silent --show-error --max-time 25 \
+            "https://pricescope-api.onrender.com/api/v1/exchange-rates?rate_type=parallel&limit=1"
+      - name: Verify live cross-store price comparisons
+        run: |
+          curl --fail --silent --show-error --max-time 25 \
+            "https://pricescope-api.onrender.com/api/v1/comparisons?limit=10"

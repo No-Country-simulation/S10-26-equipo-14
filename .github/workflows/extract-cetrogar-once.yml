@@ -1,0 +1,22 @@
+name: Retry Cetrogar product extraction
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - ".github/workflows/extract-cetrogar-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extract-cetrogar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Retry extraction after matching the registered product identity
+        run: |
+          curl --fail --silent --show-error --max-time 90 \
+            --request POST \
+            "https://pricescope-api.onrender.com/api/v1/management/stores/8/extract"

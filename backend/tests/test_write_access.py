@@ -122,6 +122,7 @@ def snapshot_database(session_scope):
 def test_production_get_endpoints_remain_public(write_policy_context):
     make_client, session_scope = write_policy_context
     store_id, _listing_id = seed_public_rows(session_scope)
+    before = snapshot_database(session_scope)
     _api, client = make_client("production", True)
     with client:
         paths = [
@@ -142,8 +143,12 @@ def test_production_get_endpoints_remain_public(write_policy_context):
                 assert set(response.json()) == {"items", "total", "limit", "offset"}
 
         private_response = client.get("/api/v1/store-products")
-        assert private_response.status_code == 404
-        assert private_response.json() == {"detail": "Recurso no disponible en el modo público."}
+        assert private_response.status_code == 200
+        assert isinstance(private_response.json(), list)
+        access_response = client.get("/api/v1/management/access")
+        assert access_response.status_code == 200
+        assert access_response.json() == {"can_manage": False}
+    assert snapshot_database(session_scope) == before
 
 
 def test_public_management_reads_redact_internal_diagnostics(write_policy_context):
@@ -253,6 +258,28 @@ def test_production_blocks_every_registered_mutation_without_database_changes(wr
     assert snapshot_database(session_scope) == before
 
 
+def test_production_mutations_remain_protected_when_an_admin_token_is_configured(write_policy_context):
+    make_client, session_scope = write_policy_context
+    seed_public_rows(session_scope)
+    before = snapshot_database(session_scope)
+    api, client = make_client("production", False, "server-side-test-token")
+    mutations = {
+        (method.upper(), path)
+        for path, operations in api.openapi()["paths"].items()
+        if path.startswith("/api/")
+        for method in operations
+        if method.upper() in WRITE_METHODS
+    }
+
+    with client:
+        for method, route_path in sorted(mutations):
+            concrete_path = route_path.replace("{store_id}", "1")
+            response = client.request(method, concrete_path, json={})
+            assert response.status_code == 401, (method, route_path, response.text)
+
+    assert snapshot_database(session_scope) == before
+
+
 def test_blocked_extraction_and_analysis_never_call_external_services(write_policy_context, monkeypatch):
     make_client, session_scope = write_policy_context
     seed_public_rows(session_scope)
@@ -310,6 +337,10 @@ def test_production_admin_token_is_required_and_authorized_mutations_are_scoped(
         "currency": "ARS",
     }
     with client:
+        public_access = client.get("/api/v1/management/access")
+        admin_access = client.get("/api/v1/management/access", headers={
+            "X-Admin-API-Token": "server-side-test-token",
+        })
         missing = client.post("/api/v1/management/stores", json=payload)
         invalid = client.post(
             "/api/v1/management/stores", json=payload,
@@ -345,6 +376,8 @@ def test_production_admin_token_is_required_and_authorized_mutations_are_scoped(
             headers={"X-Admin-API-Token": "server-side-test-token"},
         )
     assert missing.status_code == 401
+    assert public_access.json() == {"can_manage": False}
+    assert admin_access.json() == {"can_manage": True}
     assert invalid.status_code == 401
     assert authorized.status_code == 201
     assert authorized.json()["name"] == "Frávega"

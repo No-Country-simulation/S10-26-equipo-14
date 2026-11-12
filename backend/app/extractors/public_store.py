@@ -93,4 +93,4 @@ class PublicStoreExtractor:
             raise ExtractionError("BLOCKED: robots.txt no autoriza esta página.")
         html = self._fetch(listing.product_url, host)
         return parse_html_product(html, listing.product_url, configured_currency=listing.currency,
-                                  selectors=self.selectors)
+                                  selectors=self.selectors, expected_name=listing.product_name)

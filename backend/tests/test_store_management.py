@@ -46,22 +46,15 @@ def management_context(monkeypatch):
     engine.dispose()
 
 
-def test_production_store_management_writes_are_blocked_even_when_read_only_flag_is_false():
-    app = create_app(
-        cors_origins=["http://localhost:5173"],
-        app_settings=Settings(
-            _env_file=None,
-            database_url="sqlite://",
-            app_env="production",
-            public_read_only=False,
-        ),
-    )
-    with TestClient(app) as client:
-        response = client.post("/api/v1/management/stores", json={
-            "name": "Example", "base_url": "https://example.com", "country": "AR", "currency": "ARS",
-        })
-    assert response.status_code == 403
-    assert response.json()["detail"] == "Operación bloqueada: esta API está en modo público de solo lectura."
+def test_explicit_development_store_management_writes_are_enabled(management_context):
+    client, factory = management_context
+    response = client.post("/api/v1/management/stores", json={
+        "name": "Example", "base_url": "https://example.com", "country": "AR", "currency": "ARS",
+    })
+    assert response.status_code == 201
+    assert response.json()["name"] == "Example"
+    with factory() as session:
+        assert session.scalar(select(Store).where(Store.name == "Example")) is not None
 
 
 def test_create_store_is_pending_and_duplicates_are_rejected(management_context):

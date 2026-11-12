@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -10,6 +10,7 @@ from app.api.v1.management_security import (
     READ_ONLY_DETAIL,
     WRITE_METHODS,
     admin_token_configured,
+    admin_token_matches,
     writes_enabled,
 )
 from app.core.config import Settings, settings
@@ -24,20 +25,16 @@ def create_app(
     runtime_settings = app_settings or settings
     application = FastAPI(
         title="PriceScope API",
-        description="API para el monitoreo y análisis de precios.",
+        description="API pública para el monitoreo y análisis de precios.",
         version="0.1.0",
     )
     application.state.settings = runtime_settings
 
     @application.middleware("http")
     async def enforce_api_read_only_mode(request: Request, call_next):
-        """Enforce public read visibility and reject mutations before routing."""
+        """Keep public reads available and fail closed on unauthenticated writes."""
         config = request.app.state.settings
-        if (
-            request.url.path in PRIVATE_GET_PATHS
-            and request.method.upper() == "GET"
-            and config.app_env != "development"
-        ):
+        if request.url.path in PRIVATE_GET_PATHS and request.method.upper() == "GET":
             return JSONResponse(status_code=404, content={"detail": PRIVATE_GET_DETAIL})
         if (
             request.url.path.startswith("/api/")
@@ -48,17 +45,25 @@ def create_app(
             return JSONResponse(status_code=403, content={"detail": READ_ONLY_DETAIL})
         return await call_next(request)
 
-    # Register CORS after the read-only middleware so CORS remains the outer
-    # response wrapper, including for centrally rejected API mutations.
     application.add_middleware(
         CORSMiddleware,
         allow_origins=runtime_settings.cors_origins if cors_origins is None else cors_origins,
+        allow_origin_regex=r"^https://s10-26-equipo-14(?:-[a-z0-9-]+)?\.vercel\.app$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     application.include_router(api_router)
+
+    @application.get("/api/v1/management/access")
+    def management_access(
+        request: Request,
+        x_admin_api_token: str | None = Header(default=None, alias="X-Admin-API-Token"),
+    ):
+        config = request.app.state.settings
+        can_manage = writes_enabled(config) or admin_token_matches(config, x_admin_api_token)
+        return {"can_manage": can_manage}
 
     @application.get("/health")
     def health_check():

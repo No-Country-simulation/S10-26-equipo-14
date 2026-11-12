@@ -1,4 +1,4 @@
-"""Central read-only policy and explicit admin-token authentication."""
+"""Public read access and explicit administrative authentication policy."""
 
 import hmac
 
@@ -9,17 +9,13 @@ from app.core.config import Settings
 
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 READ_ONLY_DETAIL = "Operación bloqueada: esta API está en modo público de solo lectura."
-PRIVATE_GET_PATHS = frozenset({"/api/v1/store-products"})
-PRIVATE_GET_DETAIL = "Recurso no disponible en el modo público."
+# GET endpoints return public catalog and market data; none require an admin key.
+PRIVATE_GET_PATHS: frozenset[str] = frozenset()
+PRIVATE_GET_DETAIL = "Recurso no disponible."
 
 
 def writes_enabled(config: Settings) -> bool:
-    """Only an explicitly writable development environment may mutate data.
-
-    Production stays read-only even when PUBLIC_READ_ONLY is accidentally set
-    to false. Test deployments are also fail-closed; tests can construct an
-    isolated development app when they need to exercise writable behavior.
-    """
+    """Only explicitly writable development mode can bypass admin authentication."""
     return config.app_env == "development" and not config.public_read_only
 
 
@@ -39,7 +35,7 @@ def require_admin_api_token(
     request: Request,
     x_admin_api_token: str | None = Header(default=None, alias="X-Admin-API-Token"),
 ) -> None:
-    """Require a configured server-side token for every protected mutation."""
+    """Require a server-configured token for every protected mutation."""
     config = request.app.state.settings
     if writes_enabled(config):
         return

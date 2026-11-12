@@ -268,6 +268,7 @@ export interface ApiClient {
   fetchInflation: (params: { category_id?: number; store_id?: number; product_id?: number; start: string; end: string; rate_type?: "official" | "parallel" }, signal?: AbortSignal) => Promise<InflationResult>
   fetchShrinkflation: (params?: { category_id?: number; store_id?: number; product_id?: number; start?: string; end?: string; limit?: number }, signal?: AbortSignal) => Promise<ShrinkflationSignal[]>
   fetchManagedStores: (signal?: AbortSignal) => Promise<ManagedStore[]>
+  verifyAdminToken: (token: string) => Promise<boolean>
   createStore: (input: CreateStoreInput, adminToken?: string) => Promise<ManagedStore>
   analyzeStore: (storeId: number, adminToken?: string) => Promise<ManagedStore>
   saveStoreMonitoring: (storeId: number, input: StoreMonitoringInput, adminToken?: string) => Promise<ManagedStore>
@@ -502,6 +503,11 @@ export const apiClient: ApiClient = {
       throw new ApiError("PriceScope API devolvio senales de reduflacion inesperadas.")
     }
     return result as ShrinkflationSignal[]
+  },
+
+  verifyAdminToken: async (token) => {
+    const result: unknown = await request<unknown>("/api/v1/management/access", undefined, token)
+    return isRecord(result) && result.can_manage === true
   },
 
   fetchManagedStores: async (signal) => {

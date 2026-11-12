@@ -1,4 +1,3 @@
-
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -32,8 +31,6 @@ class Settings(BaseSettings):
     admin_api_token: SecretStr | None = Field(default=None, repr=False)
     app_env: Literal["development", "test", "production"] = "production"
     public_read_only: bool = True
-    # Keep local Vite and the deployed frontend available by default. Additional
-    # explicit origins may be supplied as JSON through CORS_ORIGINS.
     cors_origins: list[str] = Field(default_factory=lambda: list(DEFAULT_CORS_ORIGINS))
 
     @field_validator("cors_origins")

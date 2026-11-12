@@ -333,8 +333,13 @@ def list_exchange_rates(
         if value is not None and (value.tzinfo is None or value.utcoffset() is None):
             raise HTTPException(status_code=422, detail=f"{field_name} debe incluir zona horaria")
     _validate_range(start, end)
-    query = select(ExchangeRate)
-    query = query.where(ExchangeRate.rate_type == rate_type)
+    # Public reads are side-effect free. The hosted daily ingestion job stores
+    # source-backed quotes; this endpoint only returns persisted history.
+    query = select(ExchangeRate).where(
+        ExchangeRate.rate_type == rate_type,
+        ~ExchangeRate.source.ilike("%demo%"),
+        ~ExchangeRate.source.ilike("%synthetic%"),
+    )
     if on_date is not None:
         query = query.where(ExchangeRate.observed_at <= on_date)
     if start is not None:

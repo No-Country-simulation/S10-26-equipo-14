@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.base import Base
 import app.models  # noqa: F401 - register all mapped tables
 from app.models import ExchangeRate
-from app.services.exchange_rate_providers import BcraOfficialProvider, DolarApiBlueProvider
+from app.services.exchange_rate_providers import BcraOfficialProvider, DolarApiBlueProvider, MonedApiProvider
 from app.services.ingestion import persist_quotes
 
 
@@ -63,3 +63,41 @@ def test_persist_quotes_is_idempotent_and_keeps_source_and_type():
     finally:
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+
+def test_monedapi_official_provider_maps_sell_to_reference_and_uses_confirmation_time():
+    provider = MonedApiProvider("official", get_json=lambda _url: {
+        "buy": 1400,
+        "sell": 1420.5,
+        "updatedAt": "2026-11-12T14:25:00.000-03:00",
+        "lastScrapedAt": "2026-11-12T14:30:00.000-03:00",
+    })
+    quote, = provider.fetch()
+    assert quote.rate == Decimal("1420.5")
+    assert quote.rate_type == "official"
+    assert quote.rate_side == "reference"
+    assert quote.source == "MonedAPI"
+    assert quote.observed_at == datetime(2026, 11, 12, 17, 30, tzinfo=timezone.utc)
+
+
+def test_monedapi_parallel_provider_preserves_buy_and_sell():
+    provider = MonedApiProvider("parallel", get_json=lambda _url: {
+        "buy": 1395.25,
+        "sell": 1415.75,
+        "updatedAt": "2026-11-12T14:25:00.000-03:00",
+        "lastScrapedAt": "2026-11-12T14:30:00.000-03:00",
+    })
+    buy, sell = provider.fetch()
+    assert (buy.rate, buy.rate_side) == (Decimal("1395.25"), "buy")
+    assert (sell.rate, sell.rate_side) == (Decimal("1415.75"), "sell")
+    assert buy.rate_type == sell.rate_type == "parallel"
+    assert buy.source == sell.source == "MonedAPI"
+    assert buy.observed_at == sell.observed_at == datetime(2026, 11, 12, 17, 30, tzinfo=timezone.utc)
+
+
+def test_monedapi_provider_rejects_unknown_series():
+    import pytest
+
+    with pytest.raises(ValueError, match="official or parallel"):
+        MonedApiProvider("blue")

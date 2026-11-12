@@ -17,14 +17,15 @@ def test_cors_origins_default_include_local_and_deployed_frontends(monkeypatch):
     assert "https://pricescope-14.vercel.app" in settings.cors_origins
 
 
-def test_runtime_defaults_are_production_and_read_only(monkeypatch):
+def test_runtime_defaults_are_production_and_management_access_is_public(monkeypatch):
     monkeypatch.delenv("APP_ENV", raising=False)
-    monkeypatch.delenv("PUBLIC_READ_ONLY", raising=False)
 
     settings = Settings(_env_file=None, database_url="sqlite://")
+    response = TestClient(create_app(app_settings=settings)).get("/api/v1/management/access")
 
     assert settings.app_env == "production"
-    assert settings.public_read_only is True
+    assert response.status_code == 200
+    assert response.json() == {"can_manage": False}
 
 
 def test_runtime_environment_rejects_unknown_values():
@@ -100,6 +101,32 @@ def test_cors_preflight_allows_management_methods_from_supported_frontends():
         assert "PUT" in response.headers["access-control-allow-methods"]
 
 
+
+def test_cors_allows_only_this_projects_vercel_preview_hostnames():
+    client = TestClient(create_app(cors_origins=[]))
+    allowed_origin = "https://s10-26-equipo-14-iwu6zn7qm-juan-perez-s-projects.vercel.app"
+    response = client.options(
+        "/api/v1/categories",
+        headers={
+            "Origin": allowed_origin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == allowed_origin
+
+    rejected = client.options(
+        "/api/v1/categories",
+        headers={
+            "Origin": "https://another-project-123.vercel.app",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert rejected.status_code == 400
+
+
 def test_management_endpoints_are_registered_in_local_openapi():
     paths = create_app(cors_origins=[]).openapi()["paths"]
 
@@ -120,23 +147,22 @@ def test_cors_rejects_unauthorized_origins():
     assert "access-control-allow-origin" not in response.headers
 
 
-def test_cors_permission_does_not_authorize_api_writes():
+def test_public_management_access_verification_does_not_require_a_token():
     settings = Settings(
         _env_file=None,
         database_url="sqlite://",
         app_env="production",
-        public_read_only=False,
         cors_origins=["https://pricescope.example.com"],
     )
     client = TestClient(create_app(app_settings=settings))
 
-    response = client.post(
-        "/api/v1/price-observations",
+    response = client.get(
+        "/api/v1/management/access",
         headers={"Origin": "https://pricescope.example.com"},
-        json={},
     )
 
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert response.json() == {"can_manage": False}
     assert response.headers["access-control-allow-origin"] == "https://pricescope.example.com"
 
 

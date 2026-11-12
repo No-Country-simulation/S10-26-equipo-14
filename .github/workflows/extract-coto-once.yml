@@ -1,0 +1,29 @@
+name: First real Coto price extraction
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - ".github/workflows/extract-coto-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extract-coto:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Register a verified public Coto product page
+        run: |
+          curl --fail --silent --show-error --max-time 25 \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --data '{"store_id":4,"product_url":"https://www.coto.com.ar/productos/leche-larga-vida-parcialmente-descremada-liviana-1-la-serenisima-1l-/_/R-00251876-00251876-200?t=20260908","product_name":"Leche Larga Vida Parcialmente Descremada Liviana 1% La Serenisima 1l","currency":"ARS"}' \
+            "https://pricescope-api.onrender.com/api/v1/store-products"
+      - name: Extract the live Coto product price
+        run: |
+          curl --fail --silent --show-error --max-time 90 \
+            --request POST \
+            "https://pricescope-api.onrender.com/api/v1/management/stores/4/extract"

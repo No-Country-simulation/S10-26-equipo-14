@@ -1,0 +1,22 @@
+name: Validate Fravega public integration
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - ".github/workflows/validate-fravega.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze-fravega:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Analyze the public Fravega catalog
+        run: |
+          curl --fail --silent --show-error --max-time 90 \
+            --request POST \
+            "https://pricescope-api.onrender.com/api/v1/management/stores/2/analyze"

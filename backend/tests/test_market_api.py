@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import pytest
 
@@ -407,3 +408,31 @@ def test_catalog_does_not_normalize_unknown_product_units(client):
     assert payload["normalization_unavailable_reason"] == "unsupported_package_unit"
     assert payload["latest_price"]["normalized_price"] is None
     assert payload["latest_price"]["normalization_unavailable_reason"] == "unsupported_package_unit"
+
+
+
+def test_exchange_rate_listing_does_not_fetch_or_persist_quotes(client, monkeypatch):
+    from sqlalchemy import select
+    from app.models import ExchangeRate
+
+    def fail_if_fetching(_self):
+        raise AssertionError("public GET must not fetch or persist exchange rates")
+
+    monkeypatch.setattr("app.services.exchange_rate_providers.BcraOfficialProvider.fetch", fail_if_fetching)
+    monkeypatch.setattr("app.services.exchange_rate_providers.DolarApiBlueProvider.fetch", fail_if_fetching)
+    with _manual_db_session() as session:
+        session.add(ExchangeRate(
+            source="MonedAPI",
+            rate_type="official",
+            rate_side="reference",
+            base_currency="USD",
+            quote_currency="ARS",
+            rate=Decimal("1500"),
+            observed_at=datetime.now(timezone.utc),
+        ))
+        session.commit()
+
+    response = client.get("/api/v1/exchange-rates?rate_type=official&limit=10")
+    assert response.status_code == 200
+    with _manual_db_session() as session:
+        assert len(session.scalars(select(ExchangeRate)).all()) == 1
