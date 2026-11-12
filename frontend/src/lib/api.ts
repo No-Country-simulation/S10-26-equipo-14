@@ -96,6 +96,27 @@ function isCategory(value: unknown): value is Category {
   )
 }
 
+const ADMIN_TOKEN_STORAGE_KEY = "pricescope.adminToken"
+let adminApiToken: string | null = null
+
+export function setAdminApiToken(token: string | null) {
+  adminApiToken = token?.trim() || null
+  if (typeof window !== "undefined") {
+    if (adminApiToken) window.sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, adminApiToken)
+    else window.sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY)
+  }
+}
+
+function getAdminApiToken(): string | null {
+  if (adminApiToken) return adminApiToken
+  if (typeof window === "undefined") return null
+  return window.sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)
+}
+
+export function hasAdminApiToken(): boolean {
+  return Boolean(getAdminApiToken())
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response
   try {
@@ -104,6 +125,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       headers: {
         "Content-Type": "application/json",
         ...(init?.headers ?? {}),
+        ...((init?.method && !["GET", "HEAD", "OPTIONS"].includes(init.method.toUpperCase()) && getAdminApiToken())
+          ? { "X-Admin-Token": getAdminApiToken() as string }
+          : {}),
       },
     })
   } catch (error) {
@@ -257,6 +281,7 @@ export interface ApiClient {
   fetchInflation: (params: { category_id?: number; store_id?: number; product_id?: number; start: string; end: string; rate_type?: "official" | "parallel" }, signal?: AbortSignal) => Promise<InflationResult>
   fetchShrinkflation: (params?: { category_id?: number; store_id?: number; product_id?: number; start?: string; end?: string; limit?: number }, signal?: AbortSignal) => Promise<ShrinkflationSignal[]>
   fetchManagedStores: (signal?: AbortSignal) => Promise<ManagedStore[]>
+  verifyAdminToken: (token: string) => Promise<boolean>
   createStore: (input: CreateStoreInput) => Promise<ManagedStore>
   analyzeStore: (storeId: number) => Promise<ManagedStore>
   saveStoreMonitoring: (storeId: number, input: StoreMonitoringInput) => Promise<ManagedStore>
@@ -480,6 +505,13 @@ export const apiClient: ApiClient = {
       throw new ApiError("PriceScope API devolvio senales de reduflacion inesperadas.")
     }
     return result as ShrinkflationSignal[]
+  },
+
+  verifyAdminToken: async (token) => {
+    const result: unknown = await request<unknown>("/api/v1/management/access", {
+      headers: { "X-Admin-Token": token },
+    })
+    return isRecord(result) && result.can_manage === true
   },
 
   fetchManagedStores: async (signal) => {
