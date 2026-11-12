@@ -22,3 +22,8 @@ jobs:
           curl --fail --silent --show-error --max-time 120 \
             --request POST \
             "https://pricescope-api.onrender.com/api/v1/management/stores/1/extract"
+      - name: Collect current prices from Cetrogar
+        run: |
+          curl --fail --silent --show-error --max-time 120 \
+            --request POST \
+            "https://pricescope-api.onrender.com/api/v1/management/stores/8/extract"
