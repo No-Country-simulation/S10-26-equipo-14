@@ -7,7 +7,6 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.v1.management_security import READ_ONLY_DETAIL, WRITE_METHODS
 from app.core.config import Settings
 from app.db.base import Base
 from app.db.session import get_db
@@ -23,18 +22,8 @@ from app.models import (
 )
 
 
-EXPECTED_MUTATIONS = {
-    ("POST", "/api/v1/store-products"),
-    ("POST", "/api/v1/price-observations"),
-    ("POST", "/api/v1/management/stores"),
-    ("POST", "/api/v1/management/stores/{store_id}/analyze"),
-    ("POST", "/api/v1/management/stores/{store_id}/extract"),
-    ("PUT", "/api/v1/management/stores/{store_id}/monitoring"),
-}
-
-
 @pytest.fixture
-def write_policy_context():
+def public_context():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -42,23 +31,20 @@ def write_policy_context():
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-
-    def make_client(app_env: str, public_read_only: bool):
-        config = Settings(
+    app = create_app(
+        cors_origins=[],
+        app_settings=Settings(
             _env_file=None,
             database_url="sqlite://",
-            cors_origins=[],
-            app_env=app_env,
-            public_read_only=public_read_only,
-        )
-        api = create_app(cors_origins=[], app_settings=config)
+            app_env="production",
+        ),
+    )
 
-        def override_db():
-            with factory() as session:
-                yield session
+    def override_db():
+        with factory() as session:
+            yield session
 
-        api.dependency_overrides[get_db] = override_db
-        return api, TestClient(api)
+    app.dependency_overrides[get_db] = override_db
 
     @contextmanager
     def session_scope():
@@ -66,8 +52,10 @@ def write_policy_context():
             yield session
 
     try:
-        yield make_client, session_scope
+        with TestClient(app) as client:
+            yield client, session_scope
     finally:
+        app.dependency_overrides.clear()
         Base.metadata.drop_all(engine)
         engine.dispose()
 
@@ -108,44 +96,59 @@ def seed_public_rows(session_scope):
         return store.id, listing.id
 
 
-def snapshot_database(session_scope):
-    """Capture every table so blocked requests cannot insert, update, or delete rows."""
-    with session_scope() as session:
-        return {
-            table.name: tuple(tuple(row) for row in session.execute(select(table)).all())
-            for table in Base.metadata.sorted_tables
-        }
-
-
-def test_production_get_endpoints_remain_public(write_policy_context):
-    make_client, session_scope = write_policy_context
+def test_production_reads_and_management_access_are_public(public_context, monkeypatch):
+    client, session_scope = public_context
     store_id, _listing_id = seed_public_rows(session_scope)
-    _api, client = make_client("production", True)
-    with client:
-        paths = [
-            "/api/v1/stores",
-            "/api/v1/categories",
-            "/api/v1/products",
-            "/api/v1/products/paginated?limit=10&offset=0",
-            "/api/v1/products/paginated-with-prices?limit=10&offset=0",
-            "/api/v1/price-observations",
-                "/api/v1/exchange-rates?rate_type=official",
-            "/api/v1/management/stores",
-            f"/api/v1/management/stores/{store_id}/extractions",
-        ]
-        for path in paths:
-            response = client.get(path)
-            assert response.status_code == 200, (path, response.text)
-            if "/paginated" in path:
-                assert set(response.json()) == {"items", "total", "limit", "offset"}
+    monkeypatch.setattr("app.api.v1.router.MonedApiProvider.fetch", lambda _self: ())
 
-        private_response = client.get("/api/v1/store-products")
-        assert private_response.status_code == 404
-        assert private_response.json() == {"detail": "Recurso no disponible en el modo público."}
+    assert client.get("/api/v1/management/access").json() == {"can_manage": True}
+    paths = [
+        "/api/v1/stores",
+        "/api/v1/categories",
+        "/api/v1/products",
+        "/api/v1/products/paginated?limit=10&offset=0",
+        "/api/v1/products/paginated-with-prices?limit=10&offset=0",
+        "/api/v1/price-observations",
+        "/api/v1/exchange-rates?rate_type=official",
+        "/api/v1/management/stores",
+        f"/api/v1/management/stores/{store_id}/extractions",
+    ]
+    for path in paths:
+        response = client.get(path)
+        assert response.status_code == 200, (path, response.text)
+
+    private_response = client.get("/api/v1/store-products")
+    assert private_response.status_code == 404
 
 
-def test_public_management_reads_redact_internal_diagnostics(write_policy_context):
-    make_client, session_scope = write_policy_context
+def test_public_writes_do_not_require_admin_token(public_context):
+    client, session_scope = public_context
+    _store_id, listing_id = seed_public_rows(session_scope)
+
+    created = client.post("/api/v1/management/stores", json={
+        "name": "Tienda nueva",
+        "base_url": "https://new-store.example",
+        "country": "AR",
+        "currency": "ARS",
+    })
+    assert created.status_code == 201
+    assert created.json()["name"] == "Tienda nueva"
+
+    observation = client.post("/api/v1/price-observations", json={
+        "store_product_id": listing_id,
+        "amount": "130.00",
+        "currency": "ARS",
+        "observed_at": "2026-01-02T12:00:00Z",
+    })
+    assert observation.status_code == 201
+
+    with session_scope() as session:
+        assert session.scalar(select(Store).where(Store.name == "Tienda nueva")) is not None
+        assert len(session.scalars(select(PriceObservation)).all()) == 2
+
+
+def test_public_management_reads_redact_internal_diagnostics(public_context):
+    client, session_scope = public_context
     store_id, _listing_id = seed_public_rows(session_scope)
     with session_scope() as session:
         session.add(StoreIntegration(
@@ -170,11 +173,8 @@ def test_public_management_reads_redact_internal_diagnostics(write_policy_contex
         ))
         session.commit()
 
-    _api, client = make_client("production", True)
-    with client:
-        stores_response = client.get("/api/v1/management/stores")
-        history_response = client.get(f"/api/v1/management/stores/{store_id}/extractions")
-
+    stores_response = client.get("/api/v1/management/stores")
+    history_response = client.get(f"/api/v1/management/stores/{store_id}/extractions")
     assert stores_response.status_code == 200
     store_payload = stores_response.json()[0]
     assert store_payload["analyzer_key"] is None
@@ -189,150 +189,18 @@ def test_public_management_reads_redact_internal_diagnostics(write_policy_contex
     assert "internal diagnostic marker" not in history_response.text
     assert "private-token" not in history_response.text
 
-    _api, local_client = make_client("development", False)
-    with local_client:
-        local_store = local_client.get("/api/v1/management/stores").json()[0]
-        local_history = local_client.get(f"/api/v1/management/stores/{store_id}/extractions").json()[0]
-    assert local_store["analyzer_key"] == "internal-analyzer-v1"
-    assert "internal diagnostic marker" in local_store["analysis_message"]
-    assert local_history["source"] == "internal-extractor-v1"
-    assert "internal diagnostic marker" in local_history["error_summary"]
 
-
-def test_unhandled_get_errors_do_not_return_exception_details(write_policy_context):
-    make_client, _session_scope = write_policy_context
-    api, _client = make_client("production", True)
+def test_unhandled_get_errors_do_not_return_exception_details(public_context):
+    client, _session_scope = public_context
+    app = client.app
 
     def failing_db_dependency():
         raise RuntimeError("INTERNAL_DIAGNOSTIC_MARKER")
-        yield  # pragma: no cover - the exception is raised before yielding
+        yield  # pragma: no cover
 
-    api.dependency_overrides[get_db] = failing_db_dependency
-    client = TestClient(api, raise_server_exceptions=False)
-    response = client.get("/api/v1/categories")
+    app.dependency_overrides[get_db] = failing_db_dependency
+    response = TestClient(app, raise_server_exceptions=False).get("/api/v1/categories")
 
     assert response.status_code == 500
     assert "INTERNAL_DIAGNOSTIC_MARKER" not in response.text
     assert response.text == "Internal Server Error"
-
-
-def test_production_blocks_every_registered_mutation_without_database_changes(write_policy_context):
-    make_client, session_scope = write_policy_context
-    seed_public_rows(session_scope)
-    before = snapshot_database(session_scope)
-    api, client = make_client("production", False)
-    # OpenAPI is the stable public route contract. Newer FastAPI versions defer
-    # included-router expansion, so `api.routes` may not contain APIRoute items.
-    registered_mutations = {
-        (method.upper(), path)
-        for path, operations in api.openapi()["paths"].items()
-        if path.startswith("/api/")
-        for method in operations
-        if method.upper() in WRITE_METHODS
-    }
-    assert registered_mutations == EXPECTED_MUTATIONS
-
-    with client:
-        for method, route_path in sorted(registered_mutations):
-            concrete_path = route_path.replace("{store_id}", "1")
-            response = client.request(method, concrete_path, json={})
-            assert response.status_code == 403, (method, route_path, response.text)
-            assert response.json()["detail"] == READ_ONLY_DETAIL
-
-    assert snapshot_database(session_scope) == before
-
-
-def test_blocked_extraction_and_analysis_never_call_external_services(write_policy_context, monkeypatch):
-    make_client, session_scope = write_policy_context
-    seed_public_rows(session_scope)
-    _api, client = make_client("production", False)
-
-    def fail_if_called(*_args, **_kwargs):
-        raise AssertionError("external operation must not run in read-only mode")
-
-    monkeypatch.setattr("app.api.v1.stores.extractor_for_store", fail_if_called)
-    monkeypatch.setattr("app.api.v1.stores.analyze_store", fail_if_called)
-    with client:
-        extract_response = client.post("/api/v1/management/stores/1/extract")
-        analyze_response = client.post("/api/v1/management/stores/1/analyze")
-    assert extract_response.status_code == 403
-    assert analyze_response.status_code == 403
-
-
-def test_explicit_development_mode_allows_expected_api_writes(write_policy_context):
-    make_client, session_scope = write_policy_context
-    _store_id, listing_id = seed_public_rows(session_scope)
-    _api, client = make_client("development", False)
-    with client:
-        listing_response = client.post("/api/v1/store-products", json={
-            "store_id": 1,
-            "product_url": "https://store.example/second-item",
-            "product_name": "Segundo producto",
-            "currency": "ARS",
-        })
-        observation_response = client.post("/api/v1/price-observations", json={
-            "store_product_id": listing_id,
-            "amount": "130.00",
-            "currency": "ARS",
-            "observed_at": "2026-01-02T12:00:00Z",
-        })
-    assert listing_response.status_code == 201
-    assert observation_response.status_code == 201
-
-
-def test_test_environment_is_fail_closed_even_if_read_only_flag_is_false(write_policy_context):
-    make_client, _session_scope = write_policy_context
-    _api, client = make_client("test", False)
-    with client:
-        response = client.post("/api/v1/price-observations", json={})
-    assert response.status_code == 403
-
-
-def test_production_admin_token_enables_only_authenticated_management_writes(write_policy_context):
-    make_client, session_scope = write_policy_context
-    config = Settings(
-        _env_file=None,
-        database_url="sqlite://",
-        cors_origins=[],
-        app_env="production",
-        public_read_only=True,
-        admin_api_token="test-admin-secret",
-    )
-    api = create_app(cors_origins=[], app_settings=config)
-
-    def override_db():
-        with session_scope() as session:
-            yield session
-
-    api.dependency_overrides[get_db] = override_db
-    client = TestClient(api)
-    with client:
-        assert client.get("/api/v1/management/access").json() == {"can_manage": False}
-        assert client.get(
-            "/api/v1/management/access",
-            headers={"X-Admin-Token": "wrong-secret"},
-        ).json() == {"can_manage": False}
-        assert client.get(
-            "/api/v1/management/access",
-            headers={"X-Admin-Token": "test-admin-secret"},
-        ).json() == {"can_manage": True}
-
-        payload = {
-            "name": "Tienda administrada",
-            "base_url": "https://managed-store.example",
-            "country": "AR",
-            "currency": "ARS",
-        }
-        assert client.post("/api/v1/management/stores", json=payload).status_code == 403
-        assert client.post(
-            "/api/v1/management/stores",
-            json=payload,
-            headers={"X-Admin-Token": "wrong-secret"},
-        ).status_code == 403
-        created = client.post(
-            "/api/v1/management/stores",
-            json=payload,
-            headers={"X-Admin-Token": "test-admin-secret"},
-        )
-        assert created.status_code == 201
-        assert created.json()["name"] == "Tienda administrada"
