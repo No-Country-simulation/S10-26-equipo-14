@@ -51,6 +51,9 @@ def create_app(
     application.add_middleware(
         CORSMiddleware,
         allow_origins=runtime_settings.cors_origins if cors_origins is None else cors_origins,
+        # Vercel generates unique deployment hostnames for each preview. Restrict
+        # the regex to this project's exact Vercel hostname prefix and domain.
+        allow_origin_regex=r"^https://s10-26-equipo-14(?:-[a-z0-9-]+)?\.vercel\.app$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

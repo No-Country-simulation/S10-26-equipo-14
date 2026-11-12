@@ -100,6 +100,32 @@ def test_cors_preflight_allows_management_methods_from_supported_frontends():
         assert "PUT" in response.headers["access-control-allow-methods"]
 
 
+
+def test_cors_allows_only_this_projects_vercel_preview_hostnames():
+    client = TestClient(create_app(cors_origins=[]))
+    allowed_origin = "https://s10-26-equipo-14-iwu6zn7qm-juan-perez-s-projects.vercel.app"
+    response = client.options(
+        "/api/v1/categories",
+        headers={
+            "Origin": allowed_origin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == allowed_origin
+
+    rejected = client.options(
+        "/api/v1/categories",
+        headers={
+            "Origin": "https://another-project-123.vercel.app",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert rejected.status_code == 400
+
+
 def test_management_endpoints_are_registered_in_local_openapi():
     paths = create_app(cors_origins=[]).openapi()["paths"]
 
