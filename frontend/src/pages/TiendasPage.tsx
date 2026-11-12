@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Activity, AlertCircle, Check, ChevronRight, CircleHelp, Globe2, History, LoaderCircle, Plus, Play, RefreshCw, Store as StoreIcon } from 'lucide-react'
-import { apiClient, ApiError } from '@/lib/api'
+import { apiClient, ApiError, hasAdminApiToken, setAdminApiToken } from '@/lib/api'
 import type { Category } from '@/types/category'
 import type { CreateStoreInput, ManagedStore, StoreCategoryCandidate, StoreMonitoringInput } from '@/types/store'
 import type { ExtractionRun, PriceObservation } from '@/types'
@@ -39,7 +39,7 @@ function zonedTimestamp(value: string) {
 
 function errorText(error: unknown) {
   if (error instanceof ApiError && error.status === 403) {
-    return 'La administración está limitada al backend local mientras PriceScope no tenga autenticación de administrador. Comprueba que VITE_API_URL apunte a tu backend local.'
+    return 'Acceso administrativo no autorizado. Introduce la clave de administración válida para este entorno.'
   }
   return error instanceof Error ? error.message : 'Ocurrió un error inesperado.'
 }
@@ -227,7 +227,7 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          <button type="button" onClick={extract} disabled={!canManage || extracting} title={!canManage ? 'Disponible solo con el backend local.' : undefined} className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
+          <button type="button" onClick={extract} disabled={!canManage || extracting} title={!canManage ? 'Introduce la clave de administración para habilitar esta acción.' : undefined} className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
             {extracting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             {extracting ? 'Extrayendo…' : 'Ejecutar extracción'}
           </button>
@@ -362,7 +362,11 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
 }
 
 export default function TiendasPage() {
-  const canManage = import.meta.env.DEV
+  const [adminAuthenticated, setAdminAuthenticated] = useState(hasAdminApiToken())
+  const [adminTokenInput, setAdminTokenInput] = useState("")
+  const [adminAuthLoading, setAdminAuthLoading] = useState(false)
+  const [adminAuthError, setAdminAuthError] = useState<string | null>(null)
+  const canManage = import.meta.env.DEV || adminAuthenticated
   const [stores, setStores] = useState<ManagedStore[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [storesLoading, setStoresLoading] = useState(true)
@@ -420,6 +424,31 @@ export default function TiendasPage() {
     }
   }
 
+  const connectAdmin = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setAdminAuthLoading(true)
+    setAdminAuthError(null)
+    try {
+      const valid = await apiClient.verifyAdminToken(adminTokenInput)
+      if (!valid) {
+        setAdminAuthError("La clave no es válida o la administración no está configurada en el servidor.")
+        return
+      }
+      setAdminApiToken(adminTokenInput)
+      setAdminAuthenticated(true)
+      setAdminTokenInput("")
+    } catch (cause) {
+      setAdminAuthError(errorText(cause))
+    } finally {
+      setAdminAuthLoading(false)
+    }
+  }
+
+  const disconnectAdmin = () => {
+    setAdminApiToken(null)
+    setAdminAuthenticated(false)
+  }
+
   const handleCreated = (created: ManagedStore) => {
     updateStore(created)
     setShowForm(false)
@@ -433,17 +462,36 @@ export default function TiendasPage() {
           <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Tiendas</h1>
           <p className="mt-2 max-w-2xl text-slate-600">Registra un comercio, revisa lo que PriceScope puede detectar y decide qué categorías preparar para el monitoreo.</p>
         </div>
-          <button type="button" disabled={!canManage} title={!canManage ? 'La gestión está disponible solo en desarrollo local.' : undefined} onClick={() => setShowForm((visible) => !visible)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" disabled={!canManage} title={!canManage ? 'Introduce la clave de administración para habilitar esta acción.' : undefined} onClick={() => setShowForm((visible) => !visible)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
           <Plus className="h-4 w-4" />Agregar tienda
         </button>
       </header>
+
+      {!import.meta.env.DEV && (
+        <section className="rounded-xl border border-indigo-200 bg-white p-4 shadow-sm">
+          {canManage ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-medium text-emerald-800">Acceso administrativo habilitado para esta sesión.</p>
+              <button type="button" onClick={disconnectAdmin} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cerrar sesión administrativa</button>
+            </div>
+          ) : (
+            <form onSubmit={connectAdmin} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className="min-w-0 flex-1 text-sm font-medium text-slate-700">Clave de administración
+                <input type="password" autoComplete="current-password" value={adminTokenInput} onChange={(event) => setAdminTokenInput(event.target.value)} required className="mt-1.5 block h-10 w-full rounded-lg border border-slate-300 px-3 font-normal" placeholder="Introduce la clave privada de administración" />
+              </label>
+              <button type="submit" disabled={adminAuthLoading || !adminTokenInput.trim()} className="h-10 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">{adminAuthLoading ? "Verificando…" : "Habilitar administración"}</button>
+            </form>
+          )}
+          {adminAuthError && <p role="alert" className="mt-3 text-sm text-rose-700">{adminAuthError}</p>}
+        </section>
+      )}
 
       <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <CircleHelp className="mt-0.5 h-4 w-4 shrink-0" />
         <p id="store-management-availability">
           {canManage
             ? 'Modo local: puedes registrar tiendas, analizar enlaces públicos y configurar preferencias. La administración aún no tiene autenticación; evita usar esta pantalla fuera del entorno local.'
-            : 'Modo de consulta: puedes revisar las tiendas registradas. El alta, el análisis, la configuración y la extracción están deshabilitados porque requieren un backend local y aún no hay autenticación administrativa.'}
+            : 'Modo de consulta: puedes revisar las tiendas registradas. Introduce la clave administrativa para habilitar altas, análisis y configuración. La extracción solo funcionará cuando exista un conector compatible y publicaciones configuradas.'}
         </p>
       </div>
 
