@@ -23,3 +23,7 @@ jobs:
         run: |
           curl --fail --silent --show-error --max-time 25 \
             "https://pricescope-api.onrender.com/api/v1/exchange-rates?rate_type=parallel&limit=1"
+      - name: Verify live cross-store price comparisons
+        run: |
+          curl --fail --silent --show-error --max-time 25 \
+            "https://pricescope-api.onrender.com/api/v1/comparisons?limit=10"
