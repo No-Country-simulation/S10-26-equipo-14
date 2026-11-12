@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Retry extraction after parser fix for empty placeholder offers
+      - name: Retry extraction after matching the registered product identity
         run: |
           curl --fail --silent --show-error --max-time 90 \
             --request POST \
