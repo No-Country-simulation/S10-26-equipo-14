@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -108,6 +108,15 @@ def seed_public_rows(session_scope):
         return store.id, listing.id
 
 
+def snapshot_database(session_scope):
+    """Capture every table so blocked requests cannot insert, update, or delete rows."""
+    with session_scope() as session:
+        return {
+            table.name: tuple(tuple(row) for row in session.execute(select(table)).all())
+            for table in Base.metadata.sorted_tables
+        }
+
+
 def test_production_get_endpoints_remain_public(write_policy_context):
     make_client, session_scope = write_policy_context
     store_id, _listing_id = seed_public_rows(session_scope)
@@ -210,13 +219,16 @@ def test_unhandled_get_errors_do_not_return_exception_details(write_policy_conte
 def test_production_blocks_every_registered_mutation_without_database_changes(write_policy_context):
     make_client, session_scope = write_policy_context
     seed_public_rows(session_scope)
+    before = snapshot_database(session_scope)
     api, client = make_client("production", False)
+    # OpenAPI is the stable public route contract. Newer FastAPI versions defer
+    # included-router expansion, so `api.routes` may not contain APIRoute items.
     registered_mutations = {
-        (method, route.path)
-        for route in api.routes
-        if getattr(route, "path", "").startswith("/api/")
-        for method in (getattr(route, "methods", set()) or set())
-        if method in WRITE_METHODS
+        (method.upper(), path)
+        for path, operations in api.openapi()["paths"].items()
+        if path.startswith("/api/")
+        for method in operations
+        if method.upper() in WRITE_METHODS
     }
     assert registered_mutations == EXPECTED_MUTATIONS
 
@@ -227,10 +239,7 @@ def test_production_blocks_every_registered_mutation_without_database_changes(wr
             assert response.status_code == 403, (method, route_path, response.text)
             assert response.json()["detail"] == READ_ONLY_DETAIL
 
-    with session_scope() as session:
-        assert session.scalar(select(func.count()).select_from(Store)) == 1
-        assert session.scalar(select(func.count()).select_from(StoreProduct)) == 1
-        assert session.scalar(select(func.count()).select_from(PriceObservation)) == 1
+    assert snapshot_database(session_scope) == before
 
 
 def test_blocked_extraction_and_analysis_never_call_external_services(write_policy_context, monkeypatch):
