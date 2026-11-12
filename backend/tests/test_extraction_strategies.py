@@ -80,3 +80,19 @@ def test_unresolved_template_brand_is_not_persisted_as_product_metadata():
 
     assert snapshot.name == "Samsung QN55Q6FAAG"
     assert snapshot.brand is None
+
+
+
+def test_invalid_placeholder_offer_does_not_hide_valid_open_graph_price():
+    html = """
+    <script type="application/ld+json">
+      {"@type":"Product","name":"TV placeholder","offers":{"@type":"Offer","price":"","priceCurrency":"ARS"}}
+    </script>
+    <meta property="og:title" content="TV real">
+    <meta property="product:price:amount" content="1.899.999,00">
+    <meta property="product:price:currency" content="ARS">
+    """
+    result = parse_html_product(html, "https://shop.test/tv")
+    assert result.name == "TV real"
+    assert result.amount == Decimal("1899999.00")
+    assert result.currency == "ARS"
