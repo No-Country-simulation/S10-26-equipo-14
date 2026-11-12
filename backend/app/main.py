@@ -9,6 +9,7 @@ from app.api.v1.management_security import (
     PRIVATE_GET_PATHS,
     READ_ONLY_DETAIL,
     WRITE_METHODS,
+    admin_token_configured,
     writes_enabled,
 )
 from app.core.config import Settings, settings
@@ -42,6 +43,7 @@ def create_app(
             request.url.path.startswith("/api/")
             and request.method.upper() in WRITE_METHODS
             and not writes_enabled(config)
+            and not admin_token_configured(config)
         ):
             return JSONResponse(status_code=403, content={"detail": READ_ONLY_DETAIL})
         return await call_next(request)

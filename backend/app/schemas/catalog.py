@@ -1,7 +1,9 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+
+from app.core.currency import normalize_currency
 
 
 class ReadModel(BaseModel):
@@ -83,6 +85,31 @@ class StoreProductCreate(BaseModel):
     product_url: HttpUrl
     product_name: str = Field(min_length=1, max_length=300)
     currency: str = Field(default="ARS", min_length=3, max_length=3)
+
+
+class ManagedStoreProductCreate(BaseModel):
+    product_url: HttpUrl
+    product_name: str = Field(min_length=1, max_length=300)
+    currency: str = Field(default="ARS", min_length=3, max_length=3)
+    external_id: str | None = Field(default=None, max_length=180)
+    product_id: int | None = Field(default=None, gt=0)
+    category_id: int | None = Field(default=None, gt=0)
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, value: str) -> str:
+        normalized = normalize_currency(value)
+        if normalized is None:
+            raise ValueError("La moneda debe ser un código ISO 4217 admitido.")
+        return normalized
+
+    @field_validator("product_name")
+    @classmethod
+    def trim_product_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("El nombre de la publicación no puede estar vacío.")
+        return value
 
 
 class StoreProductOut(ReadModel):

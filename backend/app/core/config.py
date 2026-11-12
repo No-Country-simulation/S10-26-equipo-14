@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     app_name: str = "PriceScope API"
     database_url: str
+    admin_api_token: SecretStr | None = Field(default=None, repr=False)
     app_env: Literal["development", "test", "production"] = "production"
     public_read_only: bool = True
     # Keep local Vite and the deployed frontend available by default. Additional

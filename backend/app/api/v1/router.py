@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.api.v1.management_security import require_admin_api_token
 from app.services.product_normalization import calculate_unit_prices, normalize_quantity
 from app.models import Category, ExchangeRate, PriceObservation, Product, Store, StoreProduct
 from app.schemas.catalog import (CategoryOut, PricedProductOut, PricedProductPageOut,
@@ -244,7 +245,8 @@ def list_store_products(store_id: int | None = None, db: Session = Depends(get_d
     return [_store_product_payload(listing, product) for listing, product in db.execute(query).all()]
 
 
-@router.post("/store-products", response_model=StoreProductOut, status_code=status.HTTP_201_CREATED, tags=["catalog"])
+@router.post("/store-products", response_model=StoreProductOut, status_code=status.HTTP_201_CREATED,
+             tags=["catalog"], dependencies=[Depends(require_admin_api_token)])
 def create_store_product(payload: StoreProductCreate, db: Session = Depends(get_db)):
     row = StoreProduct(**payload.model_dump(mode="json"))
     db.add(row)
@@ -258,7 +260,8 @@ def create_store_product(payload: StoreProductCreate, db: Session = Depends(get_
     return _store_product_payload(row, product)
 
 
-@router.post("/price-observations", response_model=PriceObservationOut, status_code=status.HTTP_201_CREATED, tags=["prices"])
+@router.post("/price-observations", response_model=PriceObservationOut, status_code=status.HTTP_201_CREATED,
+             tags=["prices"], dependencies=[Depends(require_admin_api_token)])
 def create_price_observation(payload: PriceObservationCreate, db: Session = Depends(get_db)):
     if payload.observed_at.tzinfo is None or payload.observed_at.utcoffset() is None:
         raise HTTPException(status_code=422, detail="observed_at debe incluir zona horaria")

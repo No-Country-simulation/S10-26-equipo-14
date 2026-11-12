@@ -2,6 +2,7 @@ import type { Category, Product } from "@/types"
 import type { CreateStoreInput, ManagedStore, StoreMonitoringInput } from "@/types/store"
 import type { Store, PriceObservation, ExchangeRate } from "@/types"
 import type { ExtractionRun, PricedProduct, PricedProductPage } from "@/types"
+import type { StoreProduct } from "@/types/storeProduct"
 
 /** Backend configurable; Vite proxy local en desarrollo y API desplegada en producción. */
 const configuredBase = import.meta.env.VITE_API_URL?.trim()
@@ -22,6 +23,15 @@ export class ApiError extends Error {
     this.name = "ApiError"
     this.status = status
   }
+}
+
+export interface CreateStoreProductInput {
+  product_url: string
+  product_name: string
+  currency: string
+  external_id?: string | null
+  product_id?: number | null
+  category_id?: number | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -96,7 +106,7 @@ function isCategory(value: unknown): value is Category {
   )
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, adminToken?: string): Promise<T> {
   let response: Response
   try {
     response = await fetch(`${API_BASE}${path}`, {
@@ -104,6 +114,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       headers: {
         "Content-Type": "application/json",
         ...(init?.headers ?? {}),
+        ...(adminToken ? { "X-Admin-API-Token": adminToken } : {}),
       },
     })
   } catch (error) {
@@ -257,11 +268,14 @@ export interface ApiClient {
   fetchInflation: (params: { category_id?: number; store_id?: number; product_id?: number; start: string; end: string; rate_type?: "official" | "parallel" }, signal?: AbortSignal) => Promise<InflationResult>
   fetchShrinkflation: (params?: { category_id?: number; store_id?: number; product_id?: number; start?: string; end?: string; limit?: number }, signal?: AbortSignal) => Promise<ShrinkflationSignal[]>
   fetchManagedStores: (signal?: AbortSignal) => Promise<ManagedStore[]>
-  createStore: (input: CreateStoreInput) => Promise<ManagedStore>
-  analyzeStore: (storeId: number) => Promise<ManagedStore>
-  saveStoreMonitoring: (storeId: number, input: StoreMonitoringInput) => Promise<ManagedStore>
-  extractStore: (storeId: number) => Promise<ExtractionRun>
-  fetchStoreExtractions: (storeId: number, limit?: number, signal?: AbortSignal) => Promise<ExtractionRun[]>
+  createStore: (input: CreateStoreInput, adminToken?: string) => Promise<ManagedStore>
+  analyzeStore: (storeId: number, adminToken?: string) => Promise<ManagedStore>
+  saveStoreMonitoring: (storeId: number, input: StoreMonitoringInput, adminToken?: string) => Promise<ManagedStore>
+  extractStore: (storeId: number, adminToken?: string) => Promise<ExtractionRun>
+  fetchStoreExtractions: (storeId: number, limit?: number, signal?: AbortSignal, adminToken?: string) => Promise<ExtractionRun[]>
+  fetchRunObservations: (storeId: number, runId: number, limit?: number, signal?: AbortSignal, adminToken?: string) => Promise<PriceObservation[]>
+  fetchStoreProducts: (storeId: number, signal?: AbortSignal) => Promise<StoreProduct[]>
+  createStoreProduct: (storeId: number, input: CreateStoreProductInput, adminToken?: string) => Promise<StoreProduct>
 }
 
 const integrationStatuses = new Set([
@@ -316,6 +330,14 @@ function isStore(value: unknown): value is Store {
     typeof value.base_url === "string" && isNullableString(value.country) &&
     typeof value.is_active === "boolean" && typeof value.created_at === "string"
   )
+}
+
+function isStoreProduct(value: unknown): value is StoreProduct {
+  return isRecord(value) && Number.isInteger(value.id) && Number.isInteger(value.store_id) &&
+    (value.product_id === null || Number.isInteger(value.product_id)) &&
+    (value.category_id === null || Number.isInteger(value.category_id)) &&
+    isNullableString(value.external_id) && typeof value.product_url === "string" &&
+    typeof value.product_name === "string" && typeof value.currency === "string"
 }
 
 function isDecimal(value: unknown): value is string {
@@ -490,35 +512,62 @@ export const apiClient: ApiClient = {
     return result
   },
 
-  createStore: async (input) => requireManagedStore(await request<unknown>("/api/v1/management/stores", {
+  createStore: async (input, adminToken) => requireManagedStore(await request<unknown>("/api/v1/management/stores", {
     method: "POST",
     body: JSON.stringify(input),
-  })),
+  }, adminToken)),
 
-  analyzeStore: async (storeId) => requireManagedStore(await request<unknown>(
-    `/api/v1/management/stores/${storeId}/analyze`, { method: "POST" },
+  analyzeStore: async (storeId, adminToken) => requireManagedStore(await request<unknown>(
+    `/api/v1/management/stores/${storeId}/analyze`, { method: "POST" }, adminToken,
   )),
 
-  saveStoreMonitoring: async (storeId, input) => requireManagedStore(await request<unknown>(
+  saveStoreMonitoring: async (storeId, input, adminToken) => requireManagedStore(await request<unknown>(
     `/api/v1/management/stores/${storeId}/monitoring`, {
       method: "PUT",
       body: JSON.stringify(input),
-    },
+    }, adminToken,
   )),
 
-  extractStore: async (storeId) => {
-    const result: unknown = await request<unknown>(`/api/v1/management/stores/${storeId}/extract`, { method: "POST" })
+  extractStore: async (storeId, adminToken) => {
+    const result: unknown = await request<unknown>(`/api/v1/management/stores/${storeId}/extract`, { method: "POST" }, adminToken)
     if (!isExtractionRun(result)) throw new ApiError("PriceScope API devolvió un resultado de extracción inesperado.")
     return result
   },
 
-  fetchStoreExtractions: async (storeId, limit = 10, signal) => {
+  fetchStoreExtractions: async (storeId, limit = 10, signal, adminToken) => {
     const result: unknown = await request<unknown>(
-      `/api/v1/management/stores/${storeId}/extractions?limit=${limit}`, { signal },
+      `/api/v1/management/stores/${storeId}/extractions?limit=${limit}`, { signal }, adminToken,
     )
     if (!Array.isArray(result) || !result.every(isExtractionRun)) {
       throw new ApiError("PriceScope API devolvió un historial de extracciones inesperado.")
     }
+    return result
+  },
+
+  fetchRunObservations: async (storeId, runId, limit = 100, signal) => {
+    const result: unknown = await request<unknown>(
+      `/api/v1/management/stores/${storeId}/extractions/${runId}/observations?limit=${limit}`, { signal },
+    )
+    if (!Array.isArray(result) || !result.every(isPriceObservation)) {
+      throw new ApiError("PriceScope API devolvió observaciones de ejecución inesperadas.")
+    }
+    return result
+  },
+
+  fetchStoreProducts: async (storeId, signal) => {
+    const result: unknown = await request<unknown>(`/api/v1/management/stores/${storeId}/store-products`, { signal })
+    if (!Array.isArray(result) || !result.every(isStoreProduct)) {
+      throw new ApiError("PriceScope API devolvió publicaciones inesperadas.")
+    }
+    return result
+  },
+
+  createStoreProduct: async (storeId, input, adminToken) => {
+    const result: unknown = await request<unknown>(`/api/v1/management/stores/${storeId}/store-products`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, adminToken)
+    if (!isStoreProduct(result)) throw new ApiError("PriceScope API devolvió una publicación inesperada.")
     return result
   },
 }

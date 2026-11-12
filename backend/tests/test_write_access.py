@@ -29,6 +29,7 @@ EXPECTED_MUTATIONS = {
     ("POST", "/api/v1/management/stores"),
     ("POST", "/api/v1/management/stores/{store_id}/analyze"),
     ("POST", "/api/v1/management/stores/{store_id}/extract"),
+    ("POST", "/api/v1/management/stores/{store_id}/store-products"),
     ("PUT", "/api/v1/management/stores/{store_id}/monitoring"),
 }
 
@@ -43,13 +44,14 @@ def write_policy_context():
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
-    def make_client(app_env: str, public_read_only: bool):
+    def make_client(app_env: str, public_read_only: bool, admin_api_token: str | None = None):
         config = Settings(
             _env_file=None,
             database_url="sqlite://",
             cors_origins=[],
             app_env=app_env,
             public_read_only=public_read_only,
+            admin_api_token=admin_api_token,
         )
         api = create_app(cors_origins=[], app_settings=config)
 
@@ -189,6 +191,15 @@ def test_public_management_reads_redact_internal_diagnostics(write_policy_contex
     assert "internal diagnostic marker" not in history_response.text
     assert "private-token" not in history_response.text
 
+    _api, admin_client = make_client("production", True, "server-side-test-token")
+    with admin_client:
+        admin_history = admin_client.get(
+            f"/api/v1/management/stores/{store_id}/extractions",
+            headers={"X-Admin-API-Token": "server-side-test-token"},
+        )
+    assert admin_history.status_code == 200
+    assert "internal diagnostic marker" in admin_history.json()[0]["error_summary"]
+
     _api, local_client = make_client("development", False)
     with local_client:
         local_store = local_client.get("/api/v1/management/stores").json()[0]
@@ -286,3 +297,76 @@ def test_test_environment_is_fail_closed_even_if_read_only_flag_is_false(write_p
     with client:
         response = client.post("/api/v1/price-observations", json={})
     assert response.status_code == 403
+
+
+def test_production_admin_token_is_required_and_authorized_mutations_are_scoped(write_policy_context):
+    make_client, session_scope = write_policy_context
+    before = snapshot_database(session_scope)
+    _api, client = make_client("production", True, "server-side-test-token")
+    payload = {
+        "name": "Frávega",
+        "base_url": "https://www.fravega.com",
+        "country": "Argentina",
+        "currency": "ARS",
+    }
+    with client:
+        missing = client.post("/api/v1/management/stores", json=payload)
+        invalid = client.post(
+            "/api/v1/management/stores", json=payload,
+            headers={"X-Admin-API-Token": "wrong-token"},
+        )
+        authorized = client.post(
+            "/api/v1/management/stores", json=payload,
+            headers={"X-Admin-API-Token": "server-side-test-token"},
+        )
+        store_id = authorized.json()["id"]
+        listing_payload = {
+            "product_url": "https://www.fravega.com/p/televisor-modelo-verificable-123/",
+            "product_name": "Televisor modelo verificable",
+            "currency": "ars",
+        }
+        unauthenticated_listing = client.post(
+            f"/api/v1/management/stores/{store_id}/store-products",
+            json=listing_payload,
+        )
+        listing = client.post(
+            f"/api/v1/management/stores/{store_id}/store-products",
+            json=listing_payload,
+            headers={"X-Admin-API-Token": "server-side-test-token"},
+        )
+        invalid_host = client.post(
+            f"/api/v1/management/stores/{store_id}/store-products",
+            json={**listing_payload, "product_url": "https://unrelated.example/product/"},
+            headers={"X-Admin-API-Token": "server-side-test-token"},
+        )
+        invalid_fravega_path = client.post(
+            f"/api/v1/management/stores/{store_id}/store-products",
+            json={**listing_payload, "product_url": "https://www.fravega.com/televisores/modelo/"},
+            headers={"X-Admin-API-Token": "server-side-test-token"},
+        )
+    assert missing.status_code == 401
+    assert invalid.status_code == 401
+    assert authorized.status_code == 201
+    assert authorized.json()["name"] == "Frávega"
+    assert unauthenticated_listing.status_code == 401
+    assert listing.status_code == 201
+    assert listing.json()["currency"] == "ARS"
+    assert invalid_host.status_code == 422
+    assert invalid_fravega_path.status_code == 422
+    assert "server-side-test-token" not in repr(_api.state.settings)
+    assert snapshot_database(session_scope) != before
+
+
+def test_production_mutation_fails_closed_when_admin_token_is_not_configured(write_policy_context):
+    make_client, session_scope = write_policy_context
+    before = snapshot_database(session_scope)
+    _api, client = make_client("production", True)
+    with client:
+        response = client.post("/api/v1/management/stores", json={
+            "name": "Carrefour Argentina",
+            "base_url": "https://www.carrefour.com.ar",
+            "country": "Argentina",
+            "currency": "ARS",
+        }, headers={"X-Admin-API-Token": "any-token"})
+    assert response.status_code == 403
+    assert snapshot_database(session_scope) == before

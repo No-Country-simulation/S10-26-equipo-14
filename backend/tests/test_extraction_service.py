@@ -18,8 +18,10 @@ from app.services.extraction import run_store_extraction
 class FakeExtractor:
     name = "Extractor sintético de pruebas"
 
-    def __init__(self, *, fail_on: set[int] | None = None, barcode: str | None = "4006381333931"):
+    def __init__(self, *, fail_on: set[int] | None = None, blocked_on: set[int] | None = None, barcode: str | None = "4006381333931"):
         self.fail_on = fail_on or set()
+        self.blocked_on = blocked_on or set()
+        self.calls: list[int] = []
         self.barcode = barcode
 
     def supports(self, store):
@@ -29,6 +31,9 @@ class FakeExtractor:
         return None
 
     def extract(self, listing):
+        self.calls.append(listing.id)
+        if listing.id in self.blocked_on:
+            raise ValueError("BLOCKED: HTTP 403")
         if listing.id in self.fail_on:
             raise ValueError("fallo de fixture sintética")
         return ProductSnapshot(
@@ -206,12 +211,26 @@ def test_partial_failure_is_recorded_without_losing_successful_listing(client):
         FakeExtractor(fail_on={listings[1].id}),
     )
 
-    assert result.status == "UNSUPPORTED"
+    assert result.status == "PARTIAL_SUCCESS"
     assert result.records_seen == 1
     assert result.observations_created == 1
     assert len(result.errors) == 1
     assert session.get(ExtractionRun, result.run_id).error_summary
     assert session.scalar(select(func.count()).select_from(PriceObservation)) == 1
+    session.close()
+
+
+def test_blocked_portal_stops_the_remaining_batch(client):
+    session = _session()
+    store, listings = _make_store(session, listing_count=3)
+    extractor = FakeExtractor(blocked_on={listings[0].id})
+
+    result = run_store_extraction(session, store.id, extractor)
+
+    assert result.status == "BLOCKED"
+    assert extractor.calls == [listings[0].id]
+    assert result.observations_created == 0
+    assert session.scalar(select(func.count()).select_from(PriceObservation)) == 0
     session.close()
 
 

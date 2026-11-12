@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Activity, AlertCircle, Check, ChevronRight, CircleHelp, Globe2, History, LoaderCircle, Plus, Play, RefreshCw, Store as StoreIcon } from 'lucide-react'
-import { apiClient, ApiError } from '@/lib/api'
+import { apiClient, ApiError, type CreateStoreProductInput } from '@/lib/api'
 import type { Category } from '@/types/category'
 import type { CreateStoreInput, ManagedStore, StoreCategoryCandidate, StoreMonitoringInput } from '@/types/store'
 import type { ExtractionRun, PriceObservation } from '@/types'
+import type { StoreProduct } from '@/types/storeProduct'
 
 const STATUS_LABELS: Record<ManagedStore['integration_status'], string> = {
   pending: 'Pendiente de análisis',
@@ -29,24 +30,24 @@ function formatDate(value: string | null) {
 
 function runState(run: ExtractionRun) {
   if (run.status === 'SUCCESS' || run.status === 'succeeded') return run.observations_created > 0 ? 'Completado' : 'Sin resultados nuevos'
+  if (run.status === 'PARTIAL_SUCCESS' || run.status === 'partial') return 'Completado con errores'
   if (run.status === 'PRICE_NOT_FOUND' || run.status === 'PRODUCT_NOT_FOUND') return 'Sin resultados'
   return 'Error'
 }
 
-function zonedTimestamp(value: string) {
-  return /(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? value : `${value}Z`
-}
-
 function errorText(error: unknown) {
   if (error instanceof ApiError && error.status === 403) {
-    return 'La administración está limitada al backend local mientras PriceScope no tenga autenticación de administrador. Comprueba que VITE_API_URL apunte a tu backend local.'
+    return 'El backend mantiene la escritura pública bloqueada. Configura ADMIN_API_TOKEN en el servicio y vuelve a ingresar el token administrativo.'
   }
+  if (error instanceof ApiError && error.status === 401) return 'El token administrativo fue rechazado. Verifica el acceso con el administrador del servicio.'
+  if (error instanceof ApiError && error.status === 503) return 'La administración no está configurada en el backend. El responsable del servicio debe configurarla antes de habilitar escrituras.'
   return error instanceof Error ? error.message : 'Ocurrió un error inesperado.'
 }
 
-function StoreRegistrationForm({ onCreated, onCancel }: {
+function StoreRegistrationForm({ onCreated, onCancel, adminToken }: {
   onCreated: (store: ManagedStore) => void
   onCancel: () => void
+  adminToken?: string
 }) {
   const [form, setForm] = useState<CreateStoreInput>({ name: '', base_url: '', country: '', currency: '' })
   const [saving, setSaving] = useState(false)
@@ -61,7 +62,7 @@ function StoreRegistrationForm({ onCreated, onCancel }: {
     setSaving(true)
     setError(null)
     try {
-      onCreated(await apiClient.createStore(form))
+      onCreated(await apiClient.createStore(form, adminToken))
     } catch (cause) {
       setError(errorText(cause))
     } finally {
@@ -105,12 +106,13 @@ function StoreRegistrationForm({ onCreated, onCancel }: {
   )
 }
 
-function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
+function StoreCard({ store, categories, onUpdated, onReload, canManage, adminToken }: {
   store: ManagedStore
   categories: Category[]
   onUpdated: (store: ManagedStore) => void
   onReload: () => void
   canManage: boolean
+  adminToken?: string
 }) {
   const [analyzing, setAnalyzing] = useState(false)
   const [extracting, setExtracting] = useState(false)
@@ -122,6 +124,11 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [observationsByRun, setObservationsByRun] = useState<Record<number, PriceObservation[]>>({})
   const [observationsLoading, setObservationsLoading] = useState<number | null>(null)
+  const [storeProducts, setStoreProducts] = useState<StoreProduct[]>([])
+  const [listingName, setListingName] = useState('')
+  const [listingUrl, setListingUrl] = useState('')
+  const [listingCurrency, setListingCurrency] = useState(store.currency)
+  const [listingSaving, setListingSaving] = useState(false)
   const [selected, setSelected] = useState<number[]>(store.category_ids)
   const [currency, setCurrency] = useState(store.currency)
   const [interval, setInterval] = useState(store.interval_hours)
@@ -130,7 +137,7 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
   const loadHistory = async () => {
     setHistoryLoading(true)
     try {
-      setHistory(await apiClient.fetchStoreExtractions(store.id, 10))
+      setHistory(await apiClient.fetchStoreExtractions(store.id, 10, undefined, adminToken))
     } catch (cause) {
       setError(errorText(cause))
     } finally {
@@ -143,7 +150,7 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
     setError(null)
     setExtractResult(null)
     try {
-      const result = await apiClient.extractStore(store.id)
+      const result = await apiClient.extractStore(store.id, adminToken)
       setExtractResult(result)
       setHistoryOpen(true)
       await loadHistory()
@@ -158,13 +165,7 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
   const loadRunObservations = async (run: ExtractionRun) => {
     setObservationsLoading(run.run_id)
     try {
-      const timestamp = zonedTimestamp(run.started_at)
-      const rows = await apiClient.fetchPriceObservations({
-        store_id: store.id,
-        start: timestamp,
-        end: timestamp,
-        limit: 1000,
-      })
+      const rows = await apiClient.fetchRunObservations(store.id, run.run_id, 1000, undefined, adminToken)
       setObservationsByRun((current) => ({ ...current, [run.run_id]: rows }))
     } catch (cause) {
       setError(errorText(cause))
@@ -177,7 +178,7 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
     setAnalyzing(true)
     setError(null)
     try {
-      const updated = await apiClient.analyzeStore(store.id)
+      const updated = await apiClient.analyzeStore(store.id, adminToken)
       onUpdated(updated)
       setSelected(updated.category_ids)
     } catch (cause) {
@@ -197,7 +198,7 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
       enabled,
     }
     try {
-      onUpdated(await apiClient.saveStoreMonitoring(store.id, input))
+      onUpdated(await apiClient.saveStoreMonitoring(store.id, input, adminToken))
     } catch (cause) {
       setError(errorText(cause))
     } finally {
@@ -207,6 +208,24 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
 
   const toggleCategory = (id: number) => {
     setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
+  }
+
+  const loadListings = async () => {
+    try { setStoreProducts(await apiClient.fetchStoreProducts(store.id)) }
+    catch (cause) { setError(errorText(cause)) }
+  }
+
+  const addListing = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setListingSaving(true)
+    setError(null)
+    const input: CreateStoreProductInput = { product_url: listingUrl.trim(), product_name: listingName.trim(), currency: listingCurrency.toUpperCase() }
+    try {
+      await apiClient.createStoreProduct(store.id, input, adminToken)
+      setListingUrl(''); setListingName('')
+      await loadListings()
+    } catch (cause) { setError(errorText(cause)) }
+    finally { setListingSaving(false) }
   }
 
   return (
@@ -305,6 +324,21 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
         )}
       </div>
 
+      <div className="mt-5 rounded-xl border border-slate-200 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div><h3 className="font-semibold text-slate-900">Publicaciones de producto</h3><p className="mt-1 text-sm text-slate-600">Usa una URL HTTPS pública del mismo comercio. Los errores se registran por publicación.</p></div>
+          <button type="button" onClick={() => void loadListings()} className="text-sm font-semibold text-indigo-700 hover:underline">Consultar publicaciones</button>
+        </div>
+        {storeProducts.length > 0 && <ul className="mt-3 space-y-2">{storeProducts.map((listing) => <li key={listing.id} className="rounded-lg bg-slate-50 p-3 text-sm"><p className="font-medium text-slate-800">{listing.product_name} · {listing.currency}</p><a href={listing.product_url} target="_blank" rel="noreferrer" className="break-all text-xs text-indigo-700 hover:underline">{listing.product_url}</a></li>)}</ul>}
+        {storeProducts.length === 0 && <p className="mt-3 text-sm text-slate-500">No hay publicaciones cargadas o todavía no se consultaron.</p>}
+        {canManage && <form onSubmit={addListing} className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm font-medium text-slate-700">Nombre publicado<input required maxLength={250} value={listingName} onChange={(event) => setListingName(event.target.value)} className="mt-1 block h-10 w-full rounded-lg border border-slate-300 px-3 font-normal" /></label>
+          <label className="text-sm font-medium text-slate-700">URL pública del producto<input required type="url" value={listingUrl} onChange={(event) => setListingUrl(event.target.value)} className="mt-1 block h-10 w-full rounded-lg border border-slate-300 px-3 font-normal" /></label>
+          <label className="text-sm font-medium text-slate-700">Moneda ISO<input required pattern="[A-Za-z]{3}" maxLength={3} value={listingCurrency} onChange={(event) => setListingCurrency(event.target.value.toUpperCase())} className="mt-1 block h-10 w-full rounded-lg border border-slate-300 px-3 uppercase font-normal" /></label>
+          <button disabled={listingSaving} className="self-end rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{listingSaving ? 'Guardando…' : 'Agregar publicación'}</button>
+        </form>}
+      </div>
+
       {store.analysis_message && <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">{store.analysis_message}</p>}
       {error && <div role="alert" className="mt-3 flex items-start gap-2 rounded-lg bg-rose-50 p-3 text-sm text-rose-800"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
 
@@ -362,7 +396,8 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
 }
 
 export default function TiendasPage() {
-  const canManage = import.meta.env.DEV
+  const [adminToken, setAdminToken] = useState('')
+  const canManage = import.meta.env.DEV || adminToken.trim().length > 0
   const [stores, setStores] = useState<ManagedStore[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [storesLoading, setStoresLoading] = useState(true)
@@ -442,12 +477,16 @@ export default function TiendasPage() {
         <CircleHelp className="mt-0.5 h-4 w-4 shrink-0" />
         <p id="store-management-availability">
           {canManage
-            ? 'Modo local: puedes registrar tiendas, analizar enlaces públicos y configurar preferencias. La administración aún no tiene autenticación; evita usar esta pantalla fuera del entorno local.'
-            : 'Modo de consulta: puedes revisar las tiendas registradas. El alta, el análisis, la configuración y la extracción están deshabilitados porque requieren un backend local y aún no hay autenticación administrativa.'}
+            ? 'Las acciones administrativas envían el token al backend por solicitud; no se guarda en el navegador.'
+            : 'Modo de consulta. Ingresa el token administrativo configurado en el backend para habilitar las acciones. Solicítalo al administrador del servicio.'}
         </p>
       </div>
 
-      {showForm && <StoreRegistrationForm onCreated={handleCreated} onCancel={() => setShowForm(false)} />}
+      {!import.meta.env.DEV && <label className="block max-w-lg text-sm font-medium text-slate-700">Token administrativo de esta sesión
+        <input type="password" autoComplete="off" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} placeholder="Se conserva solo mientras esta página está abierta" className="mt-1 block h-10 w-full rounded-lg border border-slate-300 px-3 font-normal" />
+      </label>}
+
+      {showForm && <StoreRegistrationForm adminToken={adminToken} onCreated={handleCreated} onCancel={() => setShowForm(false)} />}
 
       {categoriesLoading && <p role="status" className="text-sm text-slate-500">Cargando categorías…</p>}
       {categoriesError && (
@@ -474,7 +513,7 @@ export default function TiendasPage() {
           <button type="button" disabled={!canManage} title={!canManage ? 'La gestión está disponible solo en desarrollo local.' : undefined} onClick={() => setShowForm(true)} className="mt-5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">Registrar la primera tienda</button>
         </div>
       ) : (
-        <div className="space-y-4">{stores.map((store) => <StoreCard key={store.id} store={store} categories={categories} canManage={canManage} onUpdated={updateStore} onReload={() => { void refreshStores() }} />)}</div>
+        <div className="space-y-4">{stores.map((store) => <StoreCard key={store.id} store={store} categories={categories} canManage={canManage} adminToken={adminToken} onUpdated={updateStore} onReload={() => { void refreshStores() }} />)}</div>
       )}
     </section>
   )

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.currency import is_supported_iso_currency
 from app.core.gtin import is_valid_gtin
 from app.extractors.base import ProductSnapshot, StoreExtractor
-from app.models import Category, ExtractionRun, PriceObservation, Product, Store, StoreProduct
+from app.models import Category, ExtractionRun, PriceObservation, Product, Store, StoreIntegration, StoreProduct
 from app.services.ingestion import RawPrice, normalize_decimal, persist_price
 
 
@@ -239,9 +239,13 @@ def run_store_extraction(
             except Exception as exc:  # keep valid listings even if one page is malformed
                 session.rollback()
                 errors.append(f"Publicación {listing_id}: {exc}")
+                if any(marker in str(exc).upper() for marker in ("BLOCKED", "RATE_LIMITED", "HTTP 403", "HTTP 429")):
+                    # A portal denial applies to the source, not just this URL;
+                    # stop the batch instead of making additional requests.
+                    break
 
     finished_at = datetime.now(timezone.utc)
-    status = _normalized_status(errors)
+    status = "PARTIAL_SUCCESS" if errors and observations_created > 0 else _normalized_status(errors)
     run = session.get(ExtractionRun, run_id)
     if run is None:
         raise RuntimeError("Se perdió el registro de la ejecución de extracción.")
@@ -252,6 +256,19 @@ def run_store_extraction(
     # bodies and other potentially sensitive transport details.
     diagnostic_lines = [json.dumps(item, ensure_ascii=False, sort_keys=True) for item in diagnostics]
     run.error_summary = "\n".join([*errors, *diagnostic_lines])[:4000] or None
+    integration = session.scalar(select(StoreIntegration).where(StoreIntegration.store_id == store_id))
+    if integration is not None:
+        if status in {"SUCCESS", "PARTIAL_SUCCESS"} and observations_created > 0:
+            integration.status = "active"
+            integration.analysis_message = (
+                "Extracción pública satisfactoria; la observación real quedó guardada."
+                if status == "SUCCESS"
+                else "Extracción parcial: se guardaron observaciones y se registraron errores por publicación."
+            )
+        elif errors:
+            integration.status = "error"
+            integration.analysis_message = "La última extracción no obtuvo datos utilizables; revisa su historial."
+        integration.updated_at = finished_at
     session.commit()
 
     return ExtractionResult(
