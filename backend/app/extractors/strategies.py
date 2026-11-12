@@ -198,8 +198,14 @@ def parse_html_product(html: str, url: str, configured_currency: str | None = No
     sig = page_signals(html)
     candidates: list[tuple[ProductSnapshot, str]] = []
 
-    def add(snapshot: ProductSnapshot, format_name: str) -> None:
-        candidates.append((snapshot, format_name))
+    def add(snapshot_factory, format_name: str) -> None:
+        # Retail sites often publish placeholder/empty offers alongside valid
+        # product metadata. Ignore only the invalid candidate; keep validating
+        # the remaining evidence and reject pages with no unambiguous price.
+        try:
+            candidates.append((snapshot_factory(), format_name))
+        except ExtractionError:
+            return
     for raw in sig.json_documents:
         try: root = json.loads(raw)
         except (ValueError, TypeError): continue
@@ -211,27 +217,27 @@ def parse_html_product(html: str, url: str, configured_currency: str | None = No
                 for offer in _offers(obj):
                     price = _offer_price(offer)
                     if price is not None:
-                        add(_snapshot(obj.get("name"), price, _offer_currency(offer, obj), url, obj, offer.get("availability")), "jsonld_product_offer")
+                        add(lambda: _snapshot(obj.get("name"), price, _offer_currency(offer, obj), url, obj, offer.get("availability")), "jsonld_product_offer")
             # Shopify product JSON shape; ignore compare-at (previous) prices.
             if isinstance(obj.get("variants"), list) and obj.get("title"):
                 variants = [v for v in obj["variants"] if isinstance(v, dict) and v.get("available", True) and v.get("price")]
                 prices = {str(v["price"]) for v in variants}
                 if len(prices) == 1:
-                    add(_snapshot(obj["title"], variants[0]["price"], configured_currency, url,
+                    add(lambda: _snapshot(obj["title"], variants[0]["price"], configured_currency, url,
                                   {"sku": variants[0].get("sku"), "brand": obj.get("vendor")},
                                   "InStock"), "shopify_product_json")
             # Plain embedded product state (e.g. Next/Apollo); requires unambiguous name+current price+currency.
             if obj.get("name") and (obj.get("price") or obj.get("currentPrice")) and (obj.get("priceCurrency") or configured_currency):
-                add(_snapshot(obj["name"], obj.get("price") or obj.get("currentPrice"), obj.get("priceCurrency") or configured_currency, url, obj), "embedded_product_json")
+                add(lambda: _snapshot(obj["name"], obj.get("price") or obj.get("currentPrice"), obj.get("priceCurrency") or configured_currency, url, obj), "embedded_product_json")
     if not candidates:
         m = sig.meta
         name = m.get("og:title") or m.get("product: name") or m.get("product:name")
         price = m.get("product:price:amount") or m.get("og:price:amount")
         currency = m.get("product:price:currency") or m.get("og:price:currency") or configured_currency
-        if name and price and currency: add(_snapshot(name, price, currency, url), "open_graph_product_metadata")
+        if name and price and currency: add(lambda: _snapshot(name, price, currency, url), "open_graph_product_metadata")
     ip = sig.itemprops
     if ip.get("name") and ip.get("price") and (ip.get("pricecurrency") or configured_currency):
-        add(_snapshot(ip["name"], ip["price"], ip.get("pricecurrency") or configured_currency, url, ip, ip.get("availability")), "microdata_rdfa")
+        add(lambda: _snapshot(ip["name"], ip["price"], ip.get("pricecurrency") or configured_currency, url, ip, ip.get("availability")), "microdata_rdfa")
     if selectors:
         selected = {}
         for field, selector in selectors.items():
@@ -240,7 +246,7 @@ def parse_html_product(html: str, url: str, configured_currency: str | None = No
             values = list(dict.fromkeys(parser.matches))
             if len(values) == 1: selected[field] = values[0]
         if selected.get("name") and selected.get("price") and (selected.get("currency") or configured_currency):
-            add(_snapshot(selected["name"], selected["price"], selected.get("currency") or configured_currency, url), "configured_html_selectors")
+            add(lambda: _snapshot(selected["name"], selected["price"], selected.get("currency") or configured_currency, url), "configured_html_selectors")
     # Exact duplicate strategies can see the same markup; deduplicate by evidence tuple.
     unique = {}
     for candidate, format_name in candidates:
