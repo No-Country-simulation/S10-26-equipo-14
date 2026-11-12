@@ -298,9 +298,10 @@ def test_price_observation_preserves_history_and_rejects_duplicate(client):
     assert history.json()[0]["amount"] == "110.00"
 
 
-def test_exchange_rates_can_be_filtered_by_type_and_date(client):
+def test_exchange_rates_can_be_filtered_by_type_and_date(client, monkeypatch):
     from app.models import ExchangeRate
 
+    monkeypatch.setattr("app.api.v1.router.MonedApiProvider.fetch", lambda _self: ())
     with _manual_db_session() as session:
         session.add_all([
             ExchangeRate(source="BCRA", rate_type="official", rate="1000.000000", observed_at=datetime(2026, 1, 1, tzinfo=timezone.utc)),
