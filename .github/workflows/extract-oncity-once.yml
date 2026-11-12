@@ -1,0 +1,29 @@
+name: First real On City price extraction
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - ".github/workflows/extract-oncity-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extract-oncity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Register a verified public On City product page
+        run: |
+          curl --fail --silent --show-error --max-time 25 \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --data '{"store_id":11,"product_url":"https://www.oncity.com/smart-qled-tv-samsung-75--qled-4k-3840-x-2160-qn75q7faagczb-156324/p","product_name":"Smart TV Samsung QLED 75 pulgadas 4K QN75Q7FAAGCZB","currency":"ARS"}' \
+            "https://pricescope-api.onrender.com/api/v1/store-products"
+      - name: Extract the live On City product price
+        run: |
+          curl --fail --silent --show-error --max-time 90 \
+            --request POST \
+            "https://pricescope-api.onrender.com/api/v1/management/stores/11/extract"
