@@ -17,14 +17,15 @@ def test_cors_origins_default_include_local_and_deployed_frontends(monkeypatch):
     assert "https://pricescope-14.vercel.app" in settings.cors_origins
 
 
-def test_runtime_defaults_are_production_and_read_only(monkeypatch):
+def test_runtime_defaults_are_production_and_management_is_public(monkeypatch):
     monkeypatch.delenv("APP_ENV", raising=False)
-    monkeypatch.delenv("PUBLIC_READ_ONLY", raising=False)
 
     settings = Settings(_env_file=None, database_url="sqlite://")
+    response = TestClient(create_app(app_settings=settings)).get("/api/v1/management/access")
 
     assert settings.app_env == "production"
-    assert settings.public_read_only is True
+    assert response.status_code == 200
+    assert response.json() == {"can_manage": True}
 
 
 def test_runtime_environment_rejects_unknown_values():
@@ -146,23 +147,22 @@ def test_cors_rejects_unauthorized_origins():
     assert "access-control-allow-origin" not in response.headers
 
 
-def test_cors_permission_does_not_authorize_api_writes():
+def test_public_management_access_does_not_require_an_admin_token():
     settings = Settings(
         _env_file=None,
         database_url="sqlite://",
         app_env="production",
-        public_read_only=False,
         cors_origins=["https://pricescope.example.com"],
     )
     client = TestClient(create_app(app_settings=settings))
 
-    response = client.post(
-        "/api/v1/price-observations",
+    response = client.get(
+        "/api/v1/management/access",
         headers={"Origin": "https://pricescope.example.com"},
-        json={},
     )
 
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert response.json() == {"can_manage": True}
     assert response.headers["access-control-allow-origin"] == "https://pricescope.example.com"
 
 
