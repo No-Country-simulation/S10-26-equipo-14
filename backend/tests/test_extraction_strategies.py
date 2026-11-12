@@ -96,3 +96,36 @@ def test_invalid_placeholder_offer_does_not_hide_valid_open_graph_price():
     assert result.name == "TV real"
     assert result.amount == Decimal("1899999.00")
     assert result.currency == "ARS"
+
+
+
+def test_expected_listing_name_disambiguates_related_products_on_retail_page():
+    html = """
+    <script type="application/ld+json">
+      [
+        {"@type":"Product","name":"Smart TV Samsung QN55Q6FAAGCZB 55 LED 4K","offers":{"@type":"Offer","price":"879999","priceCurrency":"ARS"}},
+        {"@type":"Product","name":"Soundbar Samsung HW-Q600C","offers":{"@type":"Offer","price":"299999","priceCurrency":"ARS"}}
+      ]
+    </script>
+    """
+    result = parse_html_product(
+        html,
+        "https://shop.test/tv",
+        configured_currency="ARS",
+        expected_name="Smart TV Samsung QN55Q6FAAGCZB 55 pulgadas LED 4K",
+    )
+    assert result.name == "Smart TV Samsung QN55Q6FAAGCZB 55 LED 4K"
+    assert result.amount == Decimal("879999")
+
+
+def test_expected_listing_name_does_not_break_tied_product_prices():
+    html = """
+    <script type="application/ld+json">
+      [
+        {"@type":"Product","name":"Smart TV Samsung 55 QLED","offers":{"@type":"Offer","price":"879999","priceCurrency":"ARS"}},
+        {"@type":"Product","name":"Smart TV Samsung 55 QLED","offers":{"@type":"Offer","price":"899999","priceCurrency":"ARS"}}
+      ]
+    </script>
+    """
+    with pytest.raises(ExtractionError, match="varios precios/productos"):
+        parse_html_product(html, "https://shop.test/tv", configured_currency="ARS", expected_name="Smart TV Samsung 55 QLED")
