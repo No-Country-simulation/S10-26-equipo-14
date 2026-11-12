@@ -22,16 +22,23 @@ export default function AlertasPage() {
   useEffect(() => {
     const controller = new AbortController()
     void Promise.all([
-      apiClient.fetchStores(controller.signal),
+      apiClient.fetchStores(controller.signal, {
+        with_observations: true,
+        eligible_for: "alerts",
+        category_id: categoryId ? Number(categoryId) : undefined,
+        start: start ? `${start}T00:00:00Z` : undefined,
+        end: end ? `${end}T23:59:59.999Z` : undefined,
+      }),
       apiClient.fetchCategories(controller.signal),
     ]).then(([nextStores, nextCategories]) => {
       setStores(nextStores)
       setCategories(nextCategories)
+      setStoreId((current) => current && nextStores.some((store) => store.id === Number(current)) ? current : "")
     }).catch((cause: unknown) => {
       if (!(cause instanceof Error && cause.name === "AbortError")) setError(message(cause))
     })
     return () => controller.abort()
-  }, [])
+  }, [categoryId, end, start])
 
   useEffect(() => {
     const controller = new AbortController()

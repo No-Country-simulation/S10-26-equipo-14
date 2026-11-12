@@ -87,3 +87,10 @@ class StoreManagementOut(BaseModel):
     category_ids: list[int]
     last_extraction_at: datetime | None
     last_extraction_status: str | None
+    connector_available: bool
+    connector_name: str | None
+    connector_configured: bool
+    is_operational: bool
+    coverage_status: str
+    operational_at: datetime | None
+    extraction_disabled_reason: str | None

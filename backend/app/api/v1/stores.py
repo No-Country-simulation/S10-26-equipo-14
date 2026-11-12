@@ -27,6 +27,8 @@ from app.schemas.market import PriceObservationOut
 from app.schemas.store_management import MonitoringUpdate, StoreCreate, StoreManagementOut
 from app.services.store_analysis import analyze_store
 from app.extractors import ExtractionError, extractor_for_store
+from app.extractors.fravega import FravegaExtractor
+from app.extractors.public_store import PublicStoreExtractor
 from app.services.extraction import run_store_extraction
 
 router = APIRouter(prefix="/management/stores", tags=["store-management"])
@@ -78,9 +80,84 @@ def _run_output(db: Session, run: ExtractionRun, store: Store,
     )
 
 
+def _coverage_fields(db: Session, store: Store, latest_run: ExtractionRun | None,
+                     has_listings: bool) -> dict[str, object]:
+    connector_name = None
+    connector_verified = False
+    try:
+        extractor = extractor_for_store(store)
+        connector_name = extractor.name
+        # The generic HTTPS parser is a fallback strategy, not proof of a
+        # store-specific connector. Only named adapters can be enabled here.
+        connector_verified = not isinstance(extractor, PublicStoreExtractor)
+    except ExtractionError:
+        pass
+
+    connector_available = connector_verified
+    connector_configured = connector_available and has_listings and store.is_active
+    observations_created = 0
+    if latest_run is not None and latest_run.status == "SUCCESS":
+        observations_created = db.scalar(
+            select(func.count(PriceObservation.id))
+            .join(StoreProduct, StoreProduct.id == PriceObservation.store_product_id)
+            .join(Store, Store.id == StoreProduct.store_id)
+            .outerjoin(Product, Product.id == StoreProduct.product_id)
+            .where(StoreProduct.store_id == store.id,
+                   PriceObservation.observed_at == latest_run.started_at,
+                   PriceObservation.is_available.is_not(False),
+                   ~Store.name.like("DEMO PriceScope %"),
+                   ~StoreProduct.product_name.like("DEMO PriceScope %"),
+                   (Product.id.is_(None) | ~Product.name.like("DEMO PriceScope %")))
+        ) or 0
+    is_operational = connector_configured and observations_created > 0
+
+    if not store.is_active:
+        coverage_status = "inactive"
+    elif connector_name is None:
+        coverage_status = "no_connector"
+    elif not connector_verified:
+        coverage_status = "connector_unverified"
+    elif not has_listings:
+        coverage_status = "no_listings"
+    elif latest_run is None:
+        coverage_status = "pending"
+    elif latest_run.status == "running":
+        coverage_status = "running"
+    elif latest_run.status == "PARTIAL_SUCCESS":
+        coverage_status = "partial"
+    elif latest_run.status != "SUCCESS":
+        coverage_status = "failed"
+    elif observations_created == 0:
+        coverage_status = "no_data"
+    else:
+        coverage_status = "operational"
+
+    if not store.is_active:
+        disabled_reason = "La tienda está inactiva."
+    elif connector_name is None:
+        disabled_reason = "Pendiente de integración: no hay un conector compatible implementado."
+    elif not connector_verified:
+        disabled_reason = "El parser HTML genérico no verifica una integración funcional para este comercio."
+    elif not has_listings:
+        disabled_reason = "Agrega una publicación de producto para configurar la extracción."
+    else:
+        disabled_reason = None
+
+    return {
+        "connector_available": connector_available,
+        "connector_name": connector_name,
+        "connector_configured": connector_configured,
+        "is_operational": is_operational,
+        "coverage_status": coverage_status,
+        "operational_at": latest_run.finished_at if is_operational else None,
+        "extraction_disabled_reason": disabled_reason,
+    }
+
+
 def _management_record(store: Store, integration: StoreIntegration | None,
                        preference: StoreMonitoringPreference | None,
-                       category_ids: list[int], latest_run: ExtractionRun | None) -> StoreManagementOut:
+                       category_ids: list[int], latest_run: ExtractionRun | None,
+                       coverage: dict[str, object]) -> StoreManagementOut:
     return StoreManagementOut(
         id=store.id,
         name=store.name,
@@ -99,6 +176,7 @@ def _management_record(store: Store, integration: StoreIntegration | None,
         category_ids=category_ids,
         last_extraction_at=latest_run.finished_at if latest_run else None,
         last_extraction_status=latest_run.status if latest_run else None,
+        **coverage,
     )
 
 
@@ -107,6 +185,17 @@ def _records(db: Session) -> list[StoreManagementOut]:
     if not stores:
         return []
     store_ids = [store.id for store in stores]
+    stores_with_listings: set[int] = set()
+    stores_by_id = {store.id: store for store in stores}
+    for listing in db.scalars(
+        select(StoreProduct).where(StoreProduct.store_id.in_(store_ids))
+    ).all():
+        store = stores_by_id[listing.store_id]
+        try:
+            _validate_listing_url(store, listing.product_url)
+        except HTTPException:
+            continue
+        stores_with_listings.add(store.id)
     integrations = {
         row.store_id: row for row in db.scalars(
             select(StoreIntegration).where(StoreIntegration.store_id.in_(store_ids))
@@ -132,8 +221,11 @@ def _records(db: Session) -> list[StoreManagementOut]:
         if run.store_id not in latest:
             latest[run.store_id] = run
     return [
-        _management_record(store, integrations.get(store.id), preferences.get(store.id),
-                           selected[store.id], latest.get(store.id))
+        _management_record(
+            store, integrations.get(store.id), preferences.get(store.id),
+            selected[store.id], latest.get(store.id),
+            _coverage_fields(db, store, latest.get(store.id), store.id in stores_with_listings),
+        )
         for store in stores
     ]
 
@@ -185,7 +277,7 @@ def create_managed_store(payload: StoreCreate, db: Session = Depends(get_db)):
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="No se pudo registrar la tienda por un conflicto de datos.") from exc
-    return _management_record(store, integration, preference, [], None)
+    return _find_record(db, store.id)
 
 
 def _canonical_host(host: str | None) -> str:
@@ -310,6 +402,31 @@ def extract_managed_store(store_id: int = Path(gt=0), db: Session = Depends(get_
             store = db.get(Store, store_id)
             if store is None:
                 raise HTTPException(status_code=404, detail="Tienda no encontrada.")
+            if not store.is_active:
+                raise HTTPException(status_code=409, detail="La tienda está inactiva.")
+            listings = db.scalars(
+                select(StoreProduct).where(StoreProduct.store_id == store_id)
+            ).all()
+            if not listings:
+                raise HTTPException(status_code=409, detail="La tienda no tiene publicaciones configuradas.")
+            try:
+                extractor = extractor_for_store(store)
+            except ExtractionError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            if isinstance(extractor, PublicStoreExtractor):
+                raise HTTPException(
+                    status_code=422,
+                    detail="El parser HTML genérico no está verificado como conector funcional para este comercio.",
+                )
+            if isinstance(extractor, FravegaExtractor):
+                for listing in listings:
+                    try:
+                        _validate_listing_url(store, listing.product_url)
+                    except HTTPException as exc:
+                        raise HTTPException(
+                            status_code=422,
+                            detail="La tienda tiene una publicación inválida o fuera del dominio permitido.",
+                        ) from exc
             stale_runs = db.scalars(select(ExtractionRun).where(
                 ExtractionRun.store_id == store_id,
                 ExtractionRun.status == "running",
@@ -321,7 +438,6 @@ def extract_managed_store(store_id: int = Path(gt=0), db: Session = Depends(get_
             if stale_runs:
                 db.commit()
             try:
-                extractor = extractor_for_store(store)
                 result = run_store_extraction(db, store_id, extractor)
             except (ExtractionError, ValueError) as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc

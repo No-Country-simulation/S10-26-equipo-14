@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -123,8 +123,82 @@ def _latest_price_payload(
 
 
 @router.get("/stores", response_model=list[StoreOut], tags=["catalog"])
-def list_stores(db: Session = Depends(get_db)):
-    return db.scalars(select(Store).where(Store.is_active.is_(True), ~Store.name.like("DEMO PriceScope %")).order_by(Store.name)).all()
+def list_stores(
+    with_observations: bool = False,
+    category_id: int | None = Query(default=None, gt=0),
+    start: datetime | None = None,
+    end: datetime | None = None,
+    eligible_for: Literal["comparisons", "alerts"] | None = None,
+    db: Session = Depends(get_db),
+):
+    _validate_range(start, end)
+    query = select(Store).where(~Store.name.like("DEMO PriceScope %"))
+    if with_observations:
+        query = (
+            query.join(StoreProduct, StoreProduct.store_id == Store.id)
+            .join(PriceObservation, PriceObservation.store_product_id == StoreProduct.id)
+            .outerjoin(Product, Product.id == StoreProduct.product_id)
+        )
+        query = query.where(
+            StoreProduct.product_id.is_not(None),
+            ~Product.name.like("DEMO PriceScope %"),
+            PriceObservation.is_available.is_not(False),
+        )
+        if start is not None:
+            query = query.where(PriceObservation.observed_at >= start)
+        if end is not None:
+            query = query.where(PriceObservation.observed_at <= end)
+        if category_id is not None:
+            query = query.where(
+                (Product.category_id == category_id) | (StoreProduct.category_id == category_id)
+            )
+        if eligible_for == "comparisons":
+            eligible_pairs = (
+                select(StoreProduct.product_id, PriceObservation.currency)
+                .join(PriceObservation, PriceObservation.store_product_id == StoreProduct.id)
+                .join(Product, Product.id == StoreProduct.product_id)
+                .join(Store, Store.id == StoreProduct.store_id)
+                .where(
+                    StoreProduct.product_id.is_not(None),
+                    PriceObservation.is_available.is_not(False),
+                    ~Product.name.like("DEMO PriceScope %"),
+                    ~Store.name.like("DEMO PriceScope %"),
+                    *([PriceObservation.observed_at >= start] if start is not None else []),
+                    *([PriceObservation.observed_at <= end] if end is not None else []),
+                    *([(Product.category_id == category_id) | (StoreProduct.category_id == category_id)] if category_id is not None else []),
+                )
+                .group_by(StoreProduct.product_id, PriceObservation.currency)
+                .having(func.count(func.distinct(StoreProduct.store_id)) >= 2)
+            )
+            query = query.where(
+                tuple_(StoreProduct.product_id, PriceObservation.currency).in_(eligible_pairs)
+            )
+        elif eligible_for == "alerts":
+            eligible_listings = (
+                select(StoreProduct.id, PriceObservation.currency)
+                .join(PriceObservation, PriceObservation.store_product_id == StoreProduct.id)
+                .join(Product, Product.id == StoreProduct.product_id)
+                .join(Store, Store.id == StoreProduct.store_id)
+                .where(
+                    StoreProduct.product_id.is_not(None),
+                    PriceObservation.is_available.is_not(False),
+                    ~Product.name.like("DEMO PriceScope %"),
+                    ~Store.name.like("DEMO PriceScope %"),
+                    *([PriceObservation.observed_at >= start] if start is not None else []),
+                    *([PriceObservation.observed_at <= end] if end is not None else []),
+                    *([(Product.category_id == category_id) | (StoreProduct.category_id == category_id)] if category_id is not None else []),
+                )
+                .group_by(StoreProduct.id, PriceObservation.currency)
+                .having(func.count(PriceObservation.id) >= 2)
+            )
+            query = query.where(
+                tuple_(StoreProduct.id, PriceObservation.currency).in_(eligible_listings)
+            )
+    elif eligible_for is not None:
+        raise HTTPException(status_code=422, detail="eligible_for requiere with_observations=true")
+    else:
+        query = query.where(Store.is_active.is_(True))
+    return db.scalars(query.distinct().order_by(Store.name)).all()
 
 
 @router.get("/categories", response_model=list[CategoryOut], tags=["catalog"])

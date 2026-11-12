@@ -38,6 +38,13 @@ export interface ManagedStore extends Store {
   category_ids: number[]
   last_extraction_at: string | null
   last_extraction_status: string | null
+  connector_available: boolean
+  connector_name: string | null
+  connector_configured: boolean
+  is_operational: boolean
+  coverage_status: 'inactive' | 'no_connector' | 'connector_unverified' | 'no_listings' | 'pending' | 'running' | 'partial' | 'failed' | 'no_data' | 'operational'
+  operational_at: string | null
+  extraction_disabled_reason: string | null
 }
 
 export interface CreateStoreInput {

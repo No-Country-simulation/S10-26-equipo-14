@@ -226,7 +226,13 @@ export interface ShrinkflationSignal {
 }
 
 export interface ApiClient {
-  fetchStores: (signal?: AbortSignal) => Promise<Store[]>
+  fetchStores: (signal?: AbortSignal, filters?: {
+    with_observations?: boolean
+    eligible_for?: "comparisons" | "alerts"
+    category_id?: number
+    start?: string
+    end?: string
+  }) => Promise<Store[]>
   fetchProducts: (
     params?: {
       category_id?: number | null
@@ -314,7 +320,14 @@ function isManagedStore(value: unknown): value is ManagedStore {
     Array.isArray(value.category_ids) &&
     value.category_ids.every((categoryId) => Number.isInteger(categoryId)) &&
     (value.last_extraction_at === null || typeof value.last_extraction_at === "string") &&
-    (value.last_extraction_status === null || typeof value.last_extraction_status === "string")
+    (value.last_extraction_status === null || typeof value.last_extraction_status === "string") &&
+    typeof value.connector_available === "boolean" &&
+    isNullableString(value.connector_name) &&
+    typeof value.connector_configured === "boolean" &&
+    typeof value.is_operational === "boolean" &&
+    typeof value.coverage_status === "string" &&
+    (value.operational_at === null || typeof value.operational_at === "string") &&
+    isNullableString(value.extraction_disabled_reason)
   )
 }
 
@@ -378,8 +391,15 @@ function queryString(params: object): string {
 
 /** Cliente de API para el catálogo canónico. */
 export const apiClient: ApiClient = {
-  fetchStores: async (signal) => {
-    const result: unknown = await request<unknown>("/api/v1/stores", { signal })
+  fetchStores: async (signal, filters) => {
+    const params = new URLSearchParams()
+    if (filters?.with_observations) params.set("with_observations", "true")
+    if (filters?.eligible_for) params.set("eligible_for", filters.eligible_for)
+    if (filters?.category_id != null) params.set("category_id", String(filters.category_id))
+    if (filters?.start) params.set("start", filters.start)
+    if (filters?.end) params.set("end", filters.end)
+    const query = params.toString()
+    const result: unknown = await request<unknown>(`/api/v1/stores${query ? `?${query}` : ""}`, { signal })
     if (!Array.isArray(result) || !result.every(isStore)) {
       throw new ApiError("PriceScope API devolvió un listado de tiendas inesperado.")
     }

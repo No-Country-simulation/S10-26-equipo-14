@@ -35,16 +35,23 @@ export default function ComparativasPage() {
   useEffect(() => {
     const controller = new AbortController()
     void Promise.all([
-      apiClient.fetchStores(controller.signal),
+      apiClient.fetchStores(controller.signal, {
+        with_observations: true,
+        eligible_for: "comparisons",
+        category_id: categoryId ? Number(categoryId) : undefined,
+        start: start ? startBoundary(start) : undefined,
+        end: end ? endBoundary(end) : undefined,
+      }),
       apiClient.fetchCategories(controller.signal),
     ]).then(([nextStores, nextCategories]) => {
       setStores(nextStores)
       setCategories(nextCategories)
+      setStoreId((current) => current && nextStores.some((store) => store.id === Number(current)) ? current : "")
     }).catch((cause: unknown) => {
       if (!(cause instanceof Error && cause.name === "AbortError")) setError(message(cause))
     })
     return () => controller.abort()
-  }, [])
+  }, [categoryId, end, start])
 
   useEffect(() => {
     const controller = new AbortController()
