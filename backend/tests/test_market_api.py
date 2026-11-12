@@ -408,3 +408,29 @@ def test_catalog_does_not_normalize_unknown_product_units(client):
     assert payload["normalization_unavailable_reason"] == "unsupported_package_unit"
     assert payload["latest_price"]["normalized_price"] is None
     assert payload["latest_price"]["normalization_unavailable_reason"] == "unsupported_package_unit"
+
+
+
+def test_exchange_rate_refresh_is_throttled_after_recent_real_capture(client, monkeypatch):
+    from app.models import ExchangeRate
+
+    calls = []
+    monkeypatch.setattr(
+        "app.api.v1.router.MonedApiProvider.fetch",
+        lambda provider: calls.append(provider.rate_type) or (),
+    )
+    with _manual_db_session() as session:
+        session.add(ExchangeRate(
+            source="MonedAPI",
+            rate_type="official",
+            rate_side="reference",
+            base_currency="USD",
+            quote_currency="ARS",
+            rate=Decimal("1500"),
+            observed_at=datetime.now(timezone.utc),
+        ))
+        session.commit()
+
+    response = client.get("/api/v1/exchange-rates?rate_type=official&limit=10")
+    assert response.status_code == 200
+    assert calls == []
