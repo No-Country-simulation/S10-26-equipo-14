@@ -5,11 +5,14 @@ import type { ExtractionRun, PricedProduct, PricedProductPage } from "@/types"
 
 /** Backend configurable; Vite proxy local en desarrollo y API desplegada en producción. */
 const configuredBase = import.meta.env.VITE_API_URL?.trim()
-const API_BASE = import.meta.env.DEV
-  ? ""
-  : (configuredBase || "https://pricescope-api.onrender.com")
-    .replace(/\/$/, "")
-    .replace(/\/api$/, "")
+const API_BASE = (configuredBase
+  ? configuredBase
+  : import.meta.env.DEV
+    ? ""
+    : "https://pricescope-api.onrender.com"
+)
+  .replace(/\/$/, "")
+  .replace(/\/api$/, "")
 
 export class ApiError extends Error {
   public readonly status?: number

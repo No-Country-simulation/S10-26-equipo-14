@@ -33,22 +33,37 @@ npm install
 
 ## 4. Configuración de variables de entorno
 
-En desarrollo local no hace falta crear `.env.local`: las solicitudes usan la
-ruta relativa `/api` y Vite las reenvía a `http://127.0.0.1:8001`.
+El cliente de API (`src/lib/api.ts`) resuelve la URL base de esta forma:
 
-`VITE_API_URL` se utiliza en compilaciones de producción para indicar la URL
-raíz del backend. Ejemplo de configuración de producción:
+1. Si `VITE_API_URL` está definida en `.env`, se usa en **todos** los entornos
+   (desarrollo y producción) como base directa de las peticiones.
+2. Si `VITE_API_URL` **no** está definida y estamos en desarrollo (`vite dev`),
+   se usa una ruta relativa `/api` que Vite proxyea al backend local
+   (`http://127.0.0.1:8001`, definido en `vite.config.ts`).
+3. Si `VITE_API_URL` **no** está definida y estamos en compilación de
+   producción, se usa el fallback `https://pricescope-api.onrender.com`.
+
+### Desarrollo local
+
+Opción A — por defecto (proxy de Vite): no definas `VITE_API_URL`. Las peticiones
+van a `/api/v1/…` y Vite las reenvía a `http://127.0.0.1:8001`.
+
+Opción B — llamada directa al backend local: descomenta en `.env`:
+
+```env
+VITE_API_URL=http://localhost:8001
+```
+
+### Producción
 
 ```env
 VITE_API_URL=https://pricescope-api.onrender.com
 ```
 
 **Importante:**
-- No configures `VITE_API_URL` para el desarrollo local; Vite usa su proxy local.
-- En producción, `VITE_API_URL` indica la URL raíz del backend.
-- No agregar `/api` al final.
+- No agregar `/api` al final de `VITE_API_URL`.
 - Las variables con prefijo `VITE_` son visibles desde el navegador. No colocar contraseñas, tokens privados ni credenciales.
-- Reiniciar Vite después de cambiar su configuración de proxy.
+- Reiniciar Vite después de cambiar `.env` o `vite.config.ts`.
 
 ## 5. Ejecución
 
