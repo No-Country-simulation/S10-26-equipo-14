@@ -8,13 +8,8 @@ from dataclasses import replace
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
 
+from app.core.currency import is_supported_iso_currency
 from app.extractors.base import ExtractionError, ProductSnapshot
-
-_ISO_4217_COMMON = frozenset("ARS USD BRL CLP UYU BOB PYG COP MXN PEN EUR GBP JPY CNY CAD AUD CHF INR KRW NZD ZAR SEK NOK DKK PLN CZK HUF TRY ILS AED SAR TWD HKD SGD IDR THB VND".split())
-
-
-def is_supported_iso_currency(value: str | None) -> bool:
-    return bool(value and value.upper() in _ISO_4217_COMMON)
 
 
 @dataclass(frozen=True)
@@ -160,9 +155,14 @@ def _snapshot(name, amount, currency, url, data=None, availability=None):
     data = data or {}
     avail = str(availability or "").rstrip("/").rsplit("/", 1)[-1]
     available = True if avail in {"InStock", "LimitedAvailability", "OnlineOnly"} else False if avail in {"OutOfStock", "SoldOut"} else None
+    brand = _text(data.get("brand"))
+    # Ignore unresolved template variables instead of persisting them as
+    # observed catalog metadata (for example, "$shop.name").
+    if brand and ("$" in brand or "{{" in brand or "}}" in brand):
+        brand = None
     return ProductSnapshot(name, parse_price(amount), currency.upper(), url,
         external_id=_text(data.get("sku") or data.get("productID")),
-        brand=_text(data.get("brand")), model=_text(data.get("model")), is_available=available)
+        brand=brand, model=_text(data.get("model")), is_available=available)
 
 
 def _offers(obj):

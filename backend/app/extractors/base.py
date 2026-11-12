@@ -27,6 +27,9 @@ class ProductSnapshot:
     category_name: str | None = None
     is_available: bool | None = None
     promotional_price: Decimal | None = None
+    observed_package_quantity: Decimal | None = None
+    observed_package_unit: str | None = None
+    observed_package_count: int | None = None
     extraction_format: str | None = None
 
 

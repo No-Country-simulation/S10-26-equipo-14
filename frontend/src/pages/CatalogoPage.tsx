@@ -2,6 +2,7 @@ import React from "react"
 import { useSearchParams } from "react-router-dom"
 
 import FilterBar, { type FilterState } from "@/components/filters/FilterBar"
+import CatalogProductSummary, { CatalogPresentation } from "@/components/catalog/CatalogProductSummary"
 import { apiClient, ApiError } from "@/lib/api"
 import {
   Table,
@@ -23,19 +24,6 @@ function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message
   if (error instanceof Error) return error.message
   return "Ocurrió un error inesperado al consultar PriceScope API."
-}
-
-function priceText(amount: string, currency: string) {
-  try {
-    return new Intl.NumberFormat("es-AR", { style: "currency", currency }).format(Number(amount))
-  } catch {
-    return `${amount} ${currency}`
-  }
-}
-
-function observedDate(value: string) {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? "Fecha no disponible" : date.toLocaleString()
 }
 
 function dateBoundary(value: string | null, endOfDay = false) {
@@ -227,19 +215,20 @@ export default function CatalogoPage({
               <TableHead className="w-48">Modelo</TableHead>
               <TableHead className="w-48">Código de barras</TableHead>
               <TableHead className="w-48">Categoría</TableHead>
+              <TableHead className="min-w-56">Presentación</TableHead>
               <TableHead className="min-w-64">Último precio observado</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {productsLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-slate-500" role="status">
+                <TableCell colSpan={8} className="py-8 text-center text-slate-500" role="status">
                   Cargando productos…
                 </TableCell>
               </TableRow>
             ) : productsError ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-slate-500">
+                <TableCell colSpan={8} className="py-8 text-center text-slate-500">
                   No se muestran datos hasta poder conectar con la API.
                 </TableCell>
               </TableRow>
@@ -258,33 +247,13 @@ export default function CatalogoPage({
                     {product.barcode ?? <span className="text-slate-400">—</span>}
                   </TableCell>
                   <TableCell>{categoryName(product.category_id)}</TableCell>
-                  <TableCell>
-                    {product.latest_price ? (
-                      <div className="space-y-1">
-                        <p className="font-semibold tabular-nums text-slate-900">
-                          {priceText(product.latest_price.amount, product.latest_price.currency)}
-                        </p>
-                        <p className="text-xs text-slate-600">
-                          {product.latest_price.is_available === true ? "Disponible" :
-                            product.latest_price.is_available === false ? "Agotado" : "Disponibilidad no informada"}
-                          {" · "}{product.latest_price.store_name}
-                        </p>
-                        <p className="text-xs text-slate-500">Actualizado {observedDate(product.latest_price.observed_at)}</p>
-                        {product.latest_price.source_url && (
-                          <a href={product.latest_price.source_url} target="_blank" rel="noreferrer" className="text-xs text-indigo-700 hover:underline">
-                            Ver publicación
-                          </a>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-sm text-slate-500">Sin observaciones de precio</span>
-                    )}
-                  </TableCell>
+                  <TableCell><CatalogPresentation product={product} /></TableCell>
+                  <TableCell><CatalogProductSummary product={product} /></TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-slate-500">
+                <TableCell colSpan={8} className="py-8 text-center text-slate-500">
                   {filters.search
                     ? "No se encontraron productos que coincidan con la búsqueda y los filtros."
                     : "No se encontraron productos con los filtros aplicados."}

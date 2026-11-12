@@ -18,8 +18,9 @@ from app.services.extraction import run_store_extraction
 class FakeExtractor:
     name = "Extractor sintético de pruebas"
 
-    def __init__(self, *, fail_on: set[int] | None = None):
+    def __init__(self, *, fail_on: set[int] | None = None, barcode: str | None = "4006381333931"):
         self.fail_on = fail_on or set()
+        self.barcode = barcode
 
     def supports(self, store):
         return True
@@ -36,7 +37,7 @@ class FakeExtractor:
             currency="ARS",
             source_url=listing.product_url,
             external_id=f"fixture-{listing.id}",
-            barcode=f"7790000000{listing.id:03d}",
+            barcode=self.barcode,
             brand="Marca ficticia",
             category_name="Hogar",
             is_available=True,
@@ -85,7 +86,7 @@ def test_run_persists_canonical_product_listing_price_and_run(client):
     observation = session.scalar(select(PriceObservation))
     run = session.get(ExtractionRun, result.run_id)
     assert product.name == "Producto ficticio 1"
-    assert product.barcode == "7790000000001"
+    assert product.barcode == "4006381333931"
     assert product.category_id is None
     assert listing.category_id is not None
     assert listing.external_id == "fixture-1"
@@ -139,7 +140,7 @@ def test_links_existing_canonical_product_by_barcode_without_overwriting_it(clie
     canonical = Product(
         name="Nombre canónico curado",
         brand="Marca curada",
-        barcode="7790000000001",
+        barcode="4006381333931",
     )
     session.add(canonical)
     session.commit()
@@ -155,6 +156,43 @@ def test_links_existing_canonical_product_by_barcode_without_overwriting_it(clie
     assert linked.brand == "Marca curada"
     assert listing.product_name == "Producto ficticio 1"
     assert product_count == 1
+    session.close()
+
+
+def test_conflicting_snapshot_gtin_does_not_relink_curated_product(client):
+    session = _session()
+    store, listings = _make_store(session)
+    curated = Product(name="Producto curado", barcode="036000291452")
+    session.add(curated)
+    session.flush()
+    listings[0].product_id = curated.id
+    session.commit()
+    curated_id = curated.id
+
+    result = run_store_extraction(session, store.id, FakeExtractor())
+
+    session.refresh(listings[0])
+    assert result.observations_created == 0
+    assert len(result.errors) == 1
+    assert "Conflicto de GTIN" in result.errors[0]
+    assert listings[0].product_id == curated_id
+    assert session.get(Product, curated_id).barcode == "036000291452"
+    assert session.scalar(select(func.count()).select_from(PriceObservation)) == 0
+    session.close()
+
+
+def test_extraction_rejects_bad_gtin_before_association_or_price_write(client):
+    session = _session()
+    store, listings = _make_store(session)
+
+    result = run_store_extraction(session, store.id, FakeExtractor(barcode="4006381333932"))
+
+    session.refresh(listings[0])
+    assert result.observations_created == 0
+    assert "GTIN inválido" in result.errors[0]
+    assert listings[0].product_id is None
+    assert session.scalar(select(func.count()).select_from(Product)) == 0
+    assert session.scalar(select(func.count()).select_from(PriceObservation)) == 0
     session.close()
 
 

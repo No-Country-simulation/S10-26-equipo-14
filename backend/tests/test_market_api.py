@@ -60,7 +60,11 @@ def test_catalog_endpoints(client):
     products = client.get("/api/v1/products").json()
     assert isinstance(products, list)
     assert len(products) == 1
-    expected_fields = {"id", "name", "brand", "model", "description", "barcode", "category_id"}
+    expected_fields = {
+        "id", "name", "brand", "model", "description", "barcode", "category_id",
+        "package_quantity", "package_unit", "package_count", "normalized_quantity",
+        "normalized_unit", "normalization_unavailable_reason",
+    }
     for product_payload in products:
         assert set(product_payload) == expected_fields
         assert type(product_payload["id"]) is int
@@ -69,6 +73,8 @@ def test_catalog_endpoints(client):
             assert product_payload[field] is None or isinstance(product_payload[field], str)
         assert product_payload["category_id"] is None or type(product_payload["category_id"]) is int
     assert products[0]["name"] == "Equipo de prueba"
+    assert products[0]["package_quantity"] is None
+    assert products[0]["normalization_unavailable_reason"] == "missing_package_quantity"
 
 
 def test_products_paginated_defaults_and_total(client):
@@ -308,7 +314,96 @@ def test_exchange_rates_can_be_filtered_by_type_and_date(client):
     assert len(response.json()) == 1
     assert response.json()[0]["rate"] == "1000.000000"
 
+    blue = client.get("/api/v1/exchange-rates", params={"rate_type": "blue"})
+    assert blue.status_code == 200
+    assert [item["rate_type"] for item in blue.json()] == ["blue"]
+
+
+def test_exchange_rates_require_a_nonblank_type(client):
+    assert client.get("/api/v1/exchange-rates").status_code == 422
+    assert client.get("/api/v1/exchange-rates", params={"rate_type": ""}).status_code == 422
+
 
 def test_price_requires_timezone(client):
     response = client.post("/api/v1/price-observations", json={"store_product_id": 1, "amount": "1", "observed_at": "2026-01-01T12:00:00"})
     assert response.status_code == 422
+
+
+def test_catalog_exposes_original_and_normalized_package_prices(client):
+    from decimal import Decimal
+    from app.models import PriceObservation, Product, Store, StoreProduct
+
+    with _manual_db_session() as session:
+        store = Store(name="Pack shop", base_url="https://pack.test")
+        product = Product(
+            name="Pack beverage", package_quantity=Decimal("500"),
+            package_unit="ml", package_count=6,
+        )
+        session.add_all([store, product])
+        session.flush()
+        listing = StoreProduct(
+            store_id=store.id, product_id=product.id,
+            product_url="https://pack.test/item", product_name=product.name,
+            currency="ARS",
+        )
+        session.add(listing)
+        session.flush()
+        session.add(PriceObservation(
+            store_product_id=listing.id, amount=Decimal("1500.00"),
+            promotional_price=Decimal("1200.00"), currency="ARS",
+            source_url=listing.product_url,
+            observed_at=datetime(2026, 11, 10, tzinfo=timezone.utc),
+        ))
+        session.commit()
+        listing_id = listing.id
+
+    response = client.get("/api/v1/products/paginated-with-prices")
+    assert response.status_code == 200
+    product_payload = response.json()["items"][0]
+    assert product_payload["package_quantity"] == "500.000000"
+    assert product_payload["package_unit"] == "ml"
+    assert product_payload["package_count"] == 6
+    assert product_payload["normalized_quantity"] == "3000.000000"
+    assert product_payload["normalized_unit"] == "ml"
+    price_payload = product_payload["latest_price"]
+    assert price_payload["amount"] == "1500.00"
+    assert price_payload["promotional_price"] == "1200.00"
+    assert price_payload["currency"] == "ARS"
+    assert price_payload["normalized_price"] == "0.5"
+    assert price_payload["normalized_promotional_price"] == "0.4"
+    assert price_payload["normalized_unit"] == "ml"
+    assert price_payload["normalization_unavailable_reason"] is None
+
+    listing_payload = client.get("/api/v1/store-products").json()[0]
+    assert listing_payload["id"] == listing_id
+    assert listing_payload["normalized_quantity"] == "3000.000000"
+
+
+def test_catalog_does_not_normalize_unknown_product_units(client):
+    from app.models import PriceObservation, Product, Store, StoreProduct
+
+    with _manual_db_session() as session:
+        store = Store(name="Unit shop", base_url="https://unit.test")
+        product = Product(
+            name="Unknown unit product", package_quantity="500",
+            package_unit="oz", package_count=1,
+        )
+        session.add_all([store, product])
+        session.flush()
+        listing = StoreProduct(
+            store_id=store.id, product_id=product.id,
+            product_url="https://unit.test/item", product_name=product.name,
+        )
+        session.add(listing)
+        session.flush()
+        session.add(PriceObservation(
+            store_product_id=listing.id, amount="10.00", currency="ARS",
+            observed_at=datetime(2026, 11, 10, tzinfo=timezone.utc),
+        ))
+        session.commit()
+
+    payload = client.get("/api/v1/products/paginated-with-prices").json()["items"][0]
+    assert payload["normalized_quantity"] is None
+    assert payload["normalization_unavailable_reason"] == "unsupported_package_unit"
+    assert payload["latest_price"]["normalized_price"] is None
+    assert payload["latest_price"]["normalization_unavailable_reason"] == "unsupported_package_unit"

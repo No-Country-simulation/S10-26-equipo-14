@@ -131,6 +131,21 @@ export default function DemoPage() {
         </Card>
       </div>
 
+      <section className="rounded-xl border border-amber-300 bg-white p-4 sm:p-5" aria-label="Escenario analítico simulado">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <DemoBadge color="red">DEMO / DATOS SIMULADOS</DemoBadge>
+          <span className="text-xs text-slate-500">Ejemplo pedagógico separado de las observaciones reales</span>
+        </div>
+        <h2 className="font-semibold text-slate-900">Posible reduflación · bebida</h2>
+        <p className="mt-2 text-sm text-slate-700">Presentación anterior: 1 L por $ 1.000 ($ 1.000/L). Presentación nueva: 900 ml por $ 950 ($ 1.055,56/L).</p>
+        <p className="mt-1 text-sm text-slate-700">Contenido −10%; precio total −5%; precio unitario +5,56%. El contenido baja y el precio no cae en la misma proporción: señal <strong>possible</strong>.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-lg bg-amber-50 p-3"><p className="text-xs text-slate-500">Inflación simulada del período</p><p className="font-semibold">12,4%</p></div>
+          <div className="rounded-lg bg-amber-50 p-3"><p className="text-xs text-slate-500">Variación cambiaria simulada</p><p className="font-semibold">11,6%</p></div>
+          <div className="rounded-lg bg-amber-50 p-3"><p className="text-xs text-slate-500">Diferencia simulada</p><p className="font-semibold">+0,8 puntos porcentuales</p></div>
+        </div>
+      </section>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>

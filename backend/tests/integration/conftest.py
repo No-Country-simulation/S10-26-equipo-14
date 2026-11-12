@@ -24,7 +24,7 @@ EXPECTED_TABLES = MARKET_TABLES | {
     "store_monitoring_preferences",
     "store_monitoring_categories",
 }
-CURRENT_HEAD = "a6f20488d7b1"
+CURRENT_HEAD = "9c7e2a1f4b60"
 
 
 def _validated_test_url():
@@ -61,6 +61,7 @@ def postgres_engine():
             or (tables == {"alembic_version", "stores"} and versions == ["cb0deba93496"])
             or (tables == MARKET_TABLES and versions == ["4db267e3b121"])
             or (tables == MARKET_TABLES and versions == ["d8f31a9c0e42"])
+            or (tables == EXPECTED_TABLES and versions == ["a6f20488d7b1"])
             or (tables == EXPECTED_TABLES and versions == [CURRENT_HEAD])
         )
         if not allowed_states:

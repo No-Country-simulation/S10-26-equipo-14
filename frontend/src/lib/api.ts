@@ -32,6 +32,14 @@ function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === "string"
 }
 
+function isOptionalNullableString(value: Record<string, unknown>, key: string): boolean {
+  return !(key in value) || isNullableString(value[key])
+}
+
+function isOptionalNullableDecimal(value: Record<string, unknown>, key: string): boolean {
+  return !(key in value) || value[key] === null || isDecimal(value[key])
+}
+
 function isProduct(value: unknown): value is Product {
   return (
     isRecord(value) &&
@@ -41,7 +49,13 @@ function isProduct(value: unknown): value is Product {
     isNullableString(value.model) &&
     isNullableString(value.description) &&
     isNullableString(value.barcode) &&
-    (value.category_id === null || Number.isInteger(value.category_id))
+    (value.category_id === null || Number.isInteger(value.category_id)) &&
+    isOptionalNullableDecimal(value, "package_quantity") &&
+    isOptionalNullableString(value, "package_unit") &&
+    (!("package_count" in value) || value.package_count === null || Number.isInteger(value.package_count)) &&
+    isOptionalNullableDecimal(value, "normalized_quantity") &&
+    isOptionalNullableString(value, "normalized_unit") &&
+    isOptionalNullableString(value, "normalization_unavailable_reason")
   )
 }
 
@@ -50,10 +64,17 @@ function isPricedProduct(value: unknown): value is PricedProduct {
   const price = value.latest_price
   return price === null || (
     isRecord(price) && typeof price.amount === "string" && Number.isFinite(Number(price.amount)) &&
+    isOptionalNullableDecimal(price, "promotional_price") &&
     typeof price.currency === "string" && typeof price.observed_at === "string" &&
     Number.isInteger(price.store_id) && typeof price.store_name === "string" &&
     Number.isInteger(price.store_product_id) && isNullableString(price.source_url) &&
-    (price.is_available === null || typeof price.is_available === "boolean")
+    (price.is_available === null || typeof price.is_available === "boolean") &&
+    isOptionalNullableDecimal(price, "normalized_quantity") &&
+    isOptionalNullableString(price, "normalized_unit") &&
+    isOptionalNullableDecimal(price, "normalized_price") &&
+    isOptionalNullableDecimal(price, "normalized_promotional_price") &&
+    isOptionalNullableString(price, "normalization_unavailable_reason") &&
+    isOptionalNullableString(price, "promotional_normalization_unavailable_reason")
   )
 }
 
@@ -112,6 +133,87 @@ export interface PaginatedProducts {
   offset: number
 }
 
+export interface PriceComparison {
+  product_id: number
+  product_name: string
+  category_id: number | null
+  currency: string
+  spread_amount: string
+  spread_percent: string | null
+  prices: Array<{
+    store_id: number
+    store_name: string
+    store_product_id: number
+    amount: string
+    promotional_price: string | null
+    effective_price: string
+    currency: string
+    observed_at: string
+    source_url: string | null
+    is_available: boolean | null
+  }>
+}
+
+export interface PriceAlert {
+  alert_type: "price_spike" | "price_increase_over_currency"
+  product_id: number
+  product_name: string
+  store_id: number
+  store_name: string
+  store_product_id: number
+  currency: string
+  previous_price: string
+  latest_price: string
+  price_change_percent: string
+  exchange_rate_type: "official" | "parallel" | null
+  exchange_rate_change_percent: string | null
+  previous_observed_at: string
+  observed_at: string
+  source_url: string | null
+}
+
+export interface InflationResult {
+  status: "available" | "insufficient_data"
+  message: string | null
+  start: string
+  end: string
+  method: string
+  currencies: Array<{
+    currency: string
+    status: "available"
+    inflation_percent: string
+    fx_rate_type: string | null
+    fx_variation_percent: string | null
+    price_minus_fx_percentage_points: string | null
+    fx_status: string
+    products_count: number
+    listings_count: number
+  }>
+  categories: Array<{ category_id: number | null; currency: string; status: string; inflation_percent: string; products_count: number }>
+  products: Array<{ product_id: number; product_name: string; category_id: number | null; currency: string; status: string; inflation_percent: string; listings_count: number; listings: Array<{ store_product_id: number; initial_price: string; final_price: string; initial_observed_at: string; final_observed_at: string }> }>
+}
+
+export interface ShrinkflationSignal {
+  status: "confirmed" | "possible"
+  product_id: number
+  product_name: string
+  store_id: number
+  store_name: string
+  store_product_id: number
+  currency: string
+  unit: string
+  previous_quantity: string
+  latest_quantity: string
+  previous_price: string
+  latest_price: string
+  previous_unit_price: string
+  latest_unit_price: string
+  unit_price_change_percent: string
+  previous_observed_at: string
+  observed_at: string
+  source_url: string | null
+}
+
 export interface ApiClient {
   fetchStores: (signal?: AbortSignal) => Promise<Store[]>
   fetchProducts: (
@@ -150,6 +252,10 @@ export interface ApiClient {
     end?: string
     limit?: number
   }, signal?: AbortSignal) => Promise<ExchangeRate[]>
+  fetchComparisons: (params?: { category_id?: number; store_id?: number; start?: string; end?: string; limit?: number }, signal?: AbortSignal) => Promise<PriceComparison[]>
+  fetchAlerts: (params?: { category_id?: number; store_id?: number; start?: string; end?: string; rate_type?: "official" | "parallel"; spike_percent?: number; limit?: number }, signal?: AbortSignal) => Promise<PriceAlert[]>
+  fetchInflation: (params: { category_id?: number; store_id?: number; product_id?: number; start: string; end: string; rate_type?: "official" | "parallel" }, signal?: AbortSignal) => Promise<InflationResult>
+  fetchShrinkflation: (params?: { category_id?: number; store_id?: number; product_id?: number; start?: string; end?: string; limit?: number }, signal?: AbortSignal) => Promise<ShrinkflationSignal[]>
   fetchManagedStores: (signal?: AbortSignal) => Promise<ManagedStore[]>
   createStore: (input: CreateStoreInput) => Promise<ManagedStore>
   analyzeStore: (storeId: number) => Promise<ManagedStore>
@@ -322,14 +428,58 @@ export const apiClient: ApiClient = {
   },
 
   fetchExchangeRates: async (params, signal) => {
+    // Render's public contract requires a rate type. Callers can explicitly
+    // request another stored type (for example "blue"); no quote is synthesized.
+    const query = { ...params, rate_type: params?.rate_type ?? "official" }
     const result: unknown = await request<unknown>(
-      `/api/v1/exchange-rates${queryString(params ?? {})}`,
+      `/api/v1/exchange-rates${queryString(query)}`,
       { signal },
     )
     if (!Array.isArray(result) || !result.every(isExchangeRate)) {
       throw new ApiError("PriceScope API devolvió cotizaciones inesperadas.")
     }
     return result
+  },
+
+  fetchComparisons: async (params, signal) => {
+    const result: unknown = await request<unknown>(`/api/v1/comparisons${queryString(params ?? {})}`, { signal })
+    if (!Array.isArray(result) || !result.every((item) => isRecord(item) &&
+      Number.isInteger(item.product_id) && typeof item.product_name === "string" &&
+      Array.isArray(item.prices) && Number.isInteger(item.prices.length) &&
+      typeof item.currency === "string" && typeof item.spread_amount === "string")) {
+      throw new ApiError("PriceScope API devolvio comparativas inesperadas.")
+    }
+    return result as PriceComparison[]
+  },
+
+  fetchAlerts: async (params, signal) => {
+    const result: unknown = await request<unknown>(`/api/v1/alerts${queryString(params ?? {})}`, { signal })
+    if (!Array.isArray(result) || !result.every((item) => isRecord(item) &&
+      (item.alert_type === "price_spike" || item.alert_type === "price_increase_over_currency") &&
+      Number.isInteger(item.product_id) && typeof item.product_name === "string" &&
+      Number.isInteger(item.store_id) && typeof item.price_change_percent === "string")) {
+      throw new ApiError("PriceScope API devolvio alertas inesperadas.")
+    }
+    return result as PriceAlert[]
+  },
+
+  fetchInflation: async (params, signal) => {
+    const result: unknown = await request<unknown>(`/api/v1/indicators/inflation${queryString(params)}`, { signal })
+    if (!isRecord(result) || (result.status !== "available" && result.status !== "insufficient_data") ||
+      !Array.isArray(result.currencies) || !Array.isArray(result.categories) || !Array.isArray(result.products)) {
+      throw new ApiError("PriceScope API devolvio un indicador de inflacion inesperado.")
+    }
+    return result as unknown as InflationResult
+  },
+
+  fetchShrinkflation: async (params, signal) => {
+    const result: unknown = await request<unknown>(`/api/v1/indicators/shrinkflation${queryString(params ?? {})}`, { signal })
+    if (!Array.isArray(result) || !result.every((item) => isRecord(item) &&
+      (item.status === "confirmed" || item.status === "possible") &&
+      Number.isInteger(item.product_id) && typeof item.unit_price_change_percent === "string")) {
+      throw new ApiError("PriceScope API devolvio senales de reduflacion inesperadas.")
+    }
+    return result as ShrinkflationSignal[]
   },
 
   fetchManagedStores: async (signal) => {

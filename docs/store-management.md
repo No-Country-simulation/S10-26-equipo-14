@@ -56,7 +56,7 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 En otra terminal, ejecuta `npm run dev` en `frontend/`. Vite reenvía `/api` a
 `http://127.0.0.1:8001`; en desarrollo no se usa la API desplegada.
 El backend exige que `DATABASE_URL` apunte a SQLite y que Alembic esté en head
-`a6f20488d7b1`. Para retirar la variable de esa terminal usa:
+`f41d0c2a9b73`. Para retirar la variable de esa terminal usa:
 
 ```powershell
 Remove-Item Env:DATABASE_URL

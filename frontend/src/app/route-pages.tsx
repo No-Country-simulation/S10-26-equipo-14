@@ -17,6 +17,8 @@ const DemoPage = lazy(() => import('../pages/DemoPage'))
 const CatalogoPage = lazy(() => import('../pages/CatalogoPage'))
 const DivisasPage = lazy(() => import('../pages/DivisasPage'))
 const TiendasPage = lazy(() => import('../pages/TiendasPage'))
+const ComparativasPage = lazy(() => import('../pages/ComparativasPage'))
+const AlertasPage = lazy(() => import('../pages/AlertasPage'))
 
 function withSuspense(element: React.ReactNode) {
   return <Suspense fallback={<PageLoading />}>{element}</Suspense>
@@ -31,6 +33,8 @@ export function CatalogoRoute() {
 }
 export function DivisasRoute() { return withSuspense(<DivisasPage />) }
 export function TiendasRoute() { return withSuspense(<TiendasPage />) }
+export function ComparativasRoute() { return withSuspense(<ComparativasPage />) }
+export function AlertasRoute() { return withSuspense(<AlertasPage />) }
 
 export function ComingSoon() {
   return (

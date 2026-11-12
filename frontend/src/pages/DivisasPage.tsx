@@ -31,14 +31,17 @@ function groupByDate(items: { observed_at: string; value: number }[]) {
 function mergeSeries(
   priceByDate: { date: string; value: number }[],
   rateByDate: { date: string; value: number }[],
+  parallelByDate: { date: string; value: number }[],
 ) {
-  const allDates = new Set([...priceByDate.map((item) => item.date), ...rateByDate.map((item) => item.date)])
+  const allDates = new Set([...priceByDate.map((item) => item.date), ...rateByDate.map((item) => item.date), ...parallelByDate.map((item) => item.date)])
   const priceMap = new Map(priceByDate.map((item) => [item.date, item.value]))
   const rateMap = new Map(rateByDate.map((item) => [item.date, item.value]))
+  const parallelMap = new Map(parallelByDate.map((item) => [item.date, item.value]))
   return Array.from(allDates).sort().map((date) => ({
     date,
     price: priceMap.get(date) ?? null,
     rate: rateMap.get(date) ?? null,
+    parallelRate: parallelMap.get(date) ?? null,
   }))
 }
 
@@ -116,12 +119,13 @@ export default function DivisasPage() {
     }
     void Promise.all([
       apiClient.fetchPriceObservations(query, controller.signal),
-      apiClient.fetchExchangeRates({ start: query.start, end: query.end, limit: PAGE_LIMIT }, controller.signal),
+      apiClient.fetchExchangeRates({ rate_type: "official", start: query.start, end: query.end, limit: PAGE_LIMIT }, controller.signal),
+      apiClient.fetchExchangeRates({ rate_type: "parallel", start: query.start, end: query.end, limit: PAGE_LIMIT }, controller.signal),
     ])
-      .then(([loadedObservations, loadedRates]) => {
+      .then(([loadedObservations, loadedOfficialRates, loadedParallelRates]) => {
         if (!active) return
         setObservations(loadedObservations)
-        setExchangeRates(loadedRates)
+        setExchangeRates([...loadedOfficialRates, ...loadedParallelRates])
         setError(null)
       })
       .catch((cause: unknown) => {
@@ -143,6 +147,9 @@ export default function DivisasPage() {
   const arsUsdReferenceRates = exchangeRates.filter(
     (item) => item.base_currency === "USD" && item.quote_currency === "ARS" && item.rate_side === "reference",
   )
+  const parallelUsdRates = exchangeRates.filter(
+    (item) => item.base_currency === "USD" && item.quote_currency === "ARS" && item.rate_type === "parallel" && item.rate_side === "sell",
+  )
   const priceByDate = groupByDate(arsObservations.map((item) => ({
     observed_at: item.observed_at,
     value: Number(item.amount),
@@ -151,9 +158,13 @@ export default function DivisasPage() {
     observed_at: item.observed_at,
     value: Number(item.rate),
   })))
-  const chartData = mergeSeries(priceByDate, rateByDate)
+  const parallelByDate = groupByDate(parallelUsdRates.map((item) => ({
+    observed_at: item.observed_at,
+    value: Number(item.rate),
+  })))
+  const chartData = mergeSeries(priceByDate, rateByDate, parallelByDate)
   const hasSyntheticRates = arsUsdReferenceRates.some((item) => /demo|sint[eé]tic|synthetic/i.test(item.source))
-  const seriesWithData = [priceByDate.length, rateByDate.length].filter((days) => days > 0)
+  const seriesWithData = [priceByDate.length, rateByDate.length, parallelByDate.length].filter((days) => days > 0)
   const hasInsufficientHistory = seriesWithData.some((days) => days < 2)
   const selectedStore = filters.storeId ? stores.find((store) => store.id === filters.storeId)?.name : null
   const selectedCategory = filters.categoryId

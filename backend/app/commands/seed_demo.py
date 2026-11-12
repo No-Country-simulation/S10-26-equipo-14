@@ -28,7 +28,7 @@ from app.models import (
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 MAIN_DB = (BACKEND_DIR / ".local" / "pricescope.sqlite3").resolve()
-ALEMBIC_HEAD = "a6f20488d7b1"
+ALEMBIC_HEAD = "9c7e2a1f4b60"
 PRODUCT_COUNT = 21
 OBSERVATION_DATES = tuple(
     datetime(2026, 11, day, 12, tzinfo=timezone.utc) for day in (1, 2, 3)

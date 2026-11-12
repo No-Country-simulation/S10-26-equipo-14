@@ -2,8 +2,9 @@ import { createBrowserRouter } from 'react-router-dom'
 import Layout from '../components/layout/Layout'
 import {
   AboutRoute,
+  AlertasRoute,
   CatalogoRoute,
-  ComingSoon,
+  ComparativasRoute,
   DemoRoute,
   DivisasRoute,
   HomeRoute,
@@ -22,8 +23,8 @@ export const router = createBrowserRouter([
       { path: 'catalogo', element: <CatalogoRoute /> },
       { path: 'divisas', element: <DivisasRoute /> },
       { path: 'tiendas', element: <TiendasRoute /> },
-      { path: 'comparativas', element: <ComingSoon /> },
-      { path: 'alertas', element: <ComingSoon /> },
+      { path: 'comparativas', element: <ComparativasRoute /> },
+      { path: 'alertas', element: <AlertasRoute /> },
       { path: '*', element: <NotFoundRoute /> },
     ],
   },

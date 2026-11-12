@@ -14,6 +14,7 @@ DEFAULT_CORS_ORIGINS = (
     "http://localhost:5173",
     "http://localhost:5174",
     "https://s10-26-equipo-14.vercel.app",
+    "https://pricescope-14.vercel.app",
 )
 
 

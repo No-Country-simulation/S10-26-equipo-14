@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
@@ -30,6 +31,12 @@ class ProductOut(ReadModel):
     description: str | None
     barcode: str | None
     category_id: int | None
+    package_quantity: Decimal | None = None
+    package_unit: str | None = None
+    package_count: int | None = None
+    normalized_quantity: Decimal | None = None
+    normalized_unit: str | None = None
+    normalization_unavailable_reason: str | None = None
 
 
 class ProductPageOut(BaseModel):
@@ -41,6 +48,7 @@ class ProductPageOut(BaseModel):
 
 class LatestProductPriceOut(BaseModel):
     amount: str
+    promotional_price: str | None = None
     currency: str
     observed_at: datetime
     store_id: int
@@ -48,6 +56,12 @@ class LatestProductPriceOut(BaseModel):
     store_product_id: int
     source_url: str | None
     is_available: bool | None
+    normalized_quantity: Decimal | None = None
+    normalized_unit: str | None = None
+    normalized_price: Decimal | None = None
+    normalized_promotional_price: Decimal | None = None
+    normalization_unavailable_reason: str | None = None
+    promotional_normalization_unavailable_reason: str | None = None
 
 
 class PricedProductOut(ProductOut):
@@ -80,3 +94,9 @@ class StoreProductOut(ReadModel):
     product_url: str
     product_name: str
     currency: str
+    package_quantity: Decimal | None = None
+    package_unit: str | None = None
+    package_count: int | None = None
+    normalized_quantity: Decimal | None = None
+    normalized_unit: str | None = None
+    normalization_unavailable_reason: str | None = None

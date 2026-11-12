@@ -120,7 +120,7 @@ def test_production_get_endpoints_remain_public(write_policy_context):
             "/api/v1/products/paginated?limit=10&offset=0",
             "/api/v1/products/paginated-with-prices?limit=10&offset=0",
             "/api/v1/price-observations",
-            "/api/v1/exchange-rates",
+                "/api/v1/exchange-rates?rate_type=official",
             "/api/v1/management/stores",
             f"/api/v1/management/stores/{store_id}/extractions",
         ]

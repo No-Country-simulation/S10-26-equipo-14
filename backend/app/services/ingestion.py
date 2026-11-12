@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Protocol, Sequence
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import ExchangeRate, ExtractionRun, PriceObservation
@@ -28,6 +29,9 @@ class RawPrice:
     source_url: str | None = None
     is_available: bool | None = None
     promotional_price: Decimal | None = None
+    observed_package_quantity: Decimal | None = None
+    observed_package_unit: str | None = None
+    observed_package_count: int | None = None
 
 
 class ExchangeRateProvider(Protocol):
@@ -68,6 +72,36 @@ def persist_quote(session: Session, quote: RawQuote) -> ExchangeRate:
     return row
 
 
+def persist_quotes(session: Session, quotes: Sequence[RawQuote]) -> int:
+    """Insert only quote observations not already stored under the unique key."""
+    created = 0
+    for quote in quotes:
+        observed_at = aware_utc(quote.observed_at)
+        identity = (
+            quote.source,
+            quote.rate_type,
+            quote.rate_side,
+            quote.base_currency.upper(),
+            quote.quote_currency.upper(),
+            observed_at,
+        )
+        exists = session.scalar(
+            select(ExchangeRate.id).where(
+                ExchangeRate.source == identity[0],
+                ExchangeRate.rate_type == identity[1],
+                ExchangeRate.rate_side == identity[2],
+                ExchangeRate.base_currency == identity[3],
+                ExchangeRate.quote_currency == identity[4],
+                ExchangeRate.observed_at == identity[5],
+            )
+        )
+        if exists is None:
+            persist_quote(session, quote)
+            created += 1
+    session.flush()
+    return created
+
+
 def persist_price(session: Session, store_product_id: int, price: RawPrice) -> PriceObservation:
     promotional_price = (
         normalize_decimal(price.promotional_price)
@@ -77,6 +111,9 @@ def persist_price(session: Session, store_product_id: int, price: RawPrice) -> P
         store_product_id=store_product_id,
         amount=normalize_decimal(price.amount),
         promotional_price=promotional_price,
+        observed_package_quantity=price.observed_package_quantity,
+        observed_package_unit=price.observed_package_unit,
+        observed_package_count=price.observed_package_count,
         currency=price.currency.upper(),
         source_url=price.source_url,
         is_available=price.is_available,

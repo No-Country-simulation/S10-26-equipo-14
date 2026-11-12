@@ -32,7 +32,7 @@ registros de `stores.json` son demostrativos. El CLI registra solo la informaci�
 que proporcione el operador y usa por defecto `backend/.local/pricescope.sqlite3`
 (ignorado por Git). No lee `.env` ni usa la configuración compartida de la API.
 `db init` inspecciona una base existente, rechaza esquemas desconocidos y aplica
-las revisiones locales hasta el head `a6f20488d7b1`; no se conecta a PostgreSQL,
+las revisiones locales hasta el head `f41d0c2a9b73`; no se conecta a PostgreSQL,
 Neon ni Render.
 
 Desde `backend/`, sustituye los marcadores por datos que hayas verificado. La URL
@@ -52,6 +52,9 @@ Omite `--gtin` si no conoces el GTIN. El alta de tienda y publicación es
 idempotente para los mismos datos; un conflicto no sobrescribe datos existentes.
 Si tienes un GTIN verificado, añade `--gtin` seguido del identificador numérico
 de 8, 12, 13 o 14 dígitos.
+Sin GTIN, cada publicacion crea un producto canonico separado; no se fusionan por nombre.
+Para registrar cantidad explicita usa --package-quantity, --package-unit y --package-count.
+Ejemplo: --package-quantity 500 --package-unit ml --package-count 6. Los datos omitidos no se infieren.
 Para otra ubicación local, antepone `--db RUTA.sqlite3` a cualquier subcomando.
 Solo se aceptan archivos SQLite locales. El CLI devuelve código 0 si la
 operación o extracción termina correctamente, 1 si la extracción fue parcial o
@@ -135,3 +138,24 @@ validado una ejecución contra una base con tiendas y publicaciones reales.
 - Añadir pruebas de parser y de fallos con fixtures sintéticos; separar esos
   fixtures de cualquier dato operativo.
 - Ejecutar integración PostgreSQL aislada antes de desplegar cambios de esquema.
+# Product quantity normalization
+
+`products.package_quantity` is stored as `NUMERIC(14,6)` (at most 8 integer
+digits and 6 meaningful fractional digits); price observations use
+`NUMERIC(14,2)` (at most 12 integer digits and 2 meaningful fractional
+digits). Inputs outside those limits are rejected before ORM persistence so
+SQLite and PostgreSQL do not silently round them. Stored source prices and
+presentation values are not rounded by the normalization service.
+
+Calculated unit prices are separate derived values, returned as `Decimal`
+rounded to 28 significant digits with `ROUND_HALF_UP`. This policy is local
+to the calculation and does not depend on the process-wide Decimal context.
+An invalid promotional amount is reported separately and does not invalidate
+an otherwise valid regular unit price. Currency is retained as received in
+normalized ISO form; no exchange conversion is performed.
+
+GTIN check-digit validation detects malformed identifiers only. It is not
+evidence that a GTIN belongs to a particular product; conflicting or curated
+associations still require review. Downgrading revision `f41d0c2a9b73` removes
+the three optional package measurement fields and therefore discards values
+collected after upgrade. Export or back up those values before a downgrade.

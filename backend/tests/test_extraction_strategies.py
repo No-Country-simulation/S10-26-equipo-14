@@ -71,3 +71,12 @@ def test_argentine_price_separators_and_nonpositive_values():
     assert parse_price("$ 1.234.567,89") == Decimal("1234567.89")
     assert parse_price("1.234,50") == Decimal("1234.50")
     with pytest.raises(ExtractionError): parse_price("0")
+
+
+def test_unresolved_template_brand_is_not_persisted_as_product_metadata():
+    html = '''<script type="application/ld+json">{"@type":"Product","name":"Samsung QN55Q6FAAG","brand":"$shop.name","offers":{"@type":"Offer","price":"1000.00","priceCurrency":"ARS"}}</script>'''
+
+    snapshot = parse_html_product(html, "https://shop.test/tv")
+
+    assert snapshot.name == "Samsung QN55Q6FAAG"
+    assert snapshot.brand is None

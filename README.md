@@ -259,6 +259,16 @@ python -m app.commands.seed_demo --apply
 El primer comando solo valida el destino; el segundo es idempotente, usa URLs
 `.invalid` y no ejecuta extracciones. No lo ejecutes contra bases remotas.
 
+Para registrar las 15 tiendas objetivo (sin URLs inventadas ni extractores),
+ejecuta desde `backend/`:
+
+```powershell
+python -m app.commands.seed_target_stores
+```
+
+El comando usa exclusivamente `backend/.local/pricescope.sqlite3`, valida su
+esquema local y es idempotente. No consulta `DATABASE_URL` ni migra la base.
+
 ## 8. API y documentación de endpoints
 
 El backend utiliza el prefijo `/api/v1` para sus rutas de negocio.

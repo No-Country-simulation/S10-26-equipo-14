@@ -13,6 +13,7 @@ import sqlite3
 import subprocess
 import sys
 from datetime import timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -20,6 +21,8 @@ from sqlalchemy import create_engine, event, select
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session
 
+from app.core.decimal_validation import positive_integer, positive_numeric
+from app.core.gtin import is_valid_gtin
 from app.extractors import ExtractionError, extractor_for_store
 from app.extractors.fravega import FravegaExtractor
 from app.models import ExtractionRun, PriceObservation, Product, Store, StoreProduct
@@ -27,7 +30,7 @@ from app.services.extraction import run_store_extraction
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_DB = BACKEND_DIR / ".local" / "pricescope.sqlite3"
-ALEMBIC_HEAD = "a6f20488d7b1"
+ALEMBIC_HEAD = "9c7e2a1f4b60"
 MARKET_TABLES = {
     "stores", "categories", "products", "store_products",
     "price_observations", "exchange_rates", "extraction_runs", "alembic_version",
@@ -45,7 +48,6 @@ SAFE_STATES = {
     MARKET_STATE,
     FULL_STATE,
 }
-GTIN_RE = re.compile(r"^(?:\d{8}|\d{12}|\d{13}|\d{14})$")
 
 
 def _local_db_path(raw_path: str | Path) -> Path:
@@ -99,7 +101,7 @@ def init_db(raw_path: str | Path) -> Path:
         raise ValueError("La base solo tiene stores, pero su revisión Alembic no es la inicial esperada.")
     if tables == MARKET_STATE and revision not in {"4db267e3b121", "d8f31a9c0e42"}:
         raise ValueError("El esquema de mercado tiene una revisión Alembic inesperada.")
-    if tables == FULL_STATE and revision != ALEMBIC_HEAD:
+    if tables == FULL_STATE and revision not in {"f41d0c2a9b73", ALEMBIC_HEAD}:
         raise ValueError("El esquema SQLite completo tiene una revisión Alembic inesperada.")
 
     database_url = URL.create("sqlite", database=str(path)).render_as_string(hide_password=False)
@@ -172,7 +174,10 @@ def add_store(session: Session, name: str, base_url: str, country: str | None = 
 
 
 def add_listing(session: Session, store_id: int, name: str, url: str,
-                currency: str, gtin: str | None = None) -> tuple[StoreProduct, bool]:
+                currency: str, gtin: str | None = None,
+                package_quantity: Decimal | str | None = None,
+                package_unit: str | None = None,
+                package_count: int | None = None) -> tuple[StoreProduct, bool]:
     store = session.get(Store, store_id)
     if store is None:
         raise ValueError(f"No existe la tienda {store_id}.")
@@ -188,33 +193,64 @@ def add_listing(session: Session, store_id: int, name: str, url: str,
     if not re.fullmatch(r"[A-Za-z]{3}", currency):
         raise ValueError("La moneda debe tener tres letras ASCII.")
     currency = currency.upper()
-    if gtin is not None and not GTIN_RE.fullmatch(gtin):
-        raise ValueError("El GTIN debe tener 8, 12, 13 o 14 dígitos, conservado como texto.")
+    if package_quantity is not None:
+        try:
+            package_quantity = positive_numeric(Decimal(str(package_quantity)), precision=14, scale=6, field="package_quantity")
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError("La cantidad de presentación debe ser decimal y positiva.") from exc
+    if package_unit is not None:
+        package_unit = package_unit.strip()
+        if not package_unit or len(package_unit) > 20:
+            raise ValueError("La unidad de presentación debe tener entre 1 y 20 caracteres.")
+    if package_count is not None:
+        package_count = positive_integer(package_count, maximum=2_147_483_647, field="package_count")
+    package_fields = {
+        "package_quantity": package_quantity,
+        "package_unit": package_unit,
+        "package_count": package_count,
+    }
+    if gtin is not None and not is_valid_gtin(gtin):
+        raise ValueError("GTIN inválido: debe cumplir longitud, dígitos ASCII y checksum.")
 
     normalized_url = _normalize_listing_url(url)
     existing = next((item for item in session.scalars(
         select(StoreProduct).where(StoreProduct.store_id == store_id)
     ).all() if _normalize_listing_url(item.product_url) == normalized_url), None)
     if existing:
-        if (existing.product_name, existing.currency, existing.product.barcode if existing.product else None) == (name, currency, gtin):
+        existing_barcode = existing.product.barcode if existing.product else None
+        if gtin is not None and existing_barcode not in (None, gtin):
+            raise ValueError("El GTIN contradice la asociación existente; requiere revisión manual.")
+        if (existing.product_name, existing.currency) != (name, currency):
+            raise ValueError("La URL ya está registrada con otros datos; no se sobrescribió.")
+        if existing.product is None:
+            if gtin is None and not any(value is not None for value in package_fields.values()):
+                return existing, False
+            product = session.scalar(select(Product).where(Product.barcode == gtin)) if gtin else None
+            if product is None:
+                product = Product(name=name, barcode=gtin, **package_fields)
+                session.add(product)
+                session.flush()
+            else:
+                _fill_missing_package_fields(product, package_fields)
+            existing.product_id = product.id
+            session.commit()
             return existing, False
-        raise ValueError("La URL ya está registrada con otros datos; no se sobrescribió.")
+        product = existing.product
+        if existing_barcode is None and gtin is not None:
+            raise ValueError("La asociación existente no tiene GTIN; requiere revisión manual antes de asignarlo.")
+        if _fill_missing_package_fields(product, package_fields):
+            session.commit()
+        return existing, False
 
     if gtin:
         product = session.scalar(select(Product).where(Product.barcode == gtin))
-        if product is None:
-            same_name = session.scalars(select(Product).where(Product.name.ilike(name)).limit(2)).all()
-            unkeyed = [candidate for candidate in same_name if candidate.barcode is None]
-            if len(unkeyed) == 1 and len(same_name) == 1:
-                product = unkeyed[0]
-                product.barcode = gtin
+        if product is not None:
+            _fill_missing_package_fields(product, package_fields)
     else:
-        candidates = session.scalars(select(Product).where(Product.name.ilike(name)).limit(2)).all()
-        if len(candidates) > 1:
-            raise ValueError("El nombre coincide con varios productos canónicos; registra un GTIN para resolverlo.")
-        product = candidates[0] if candidates else None
+        # Product names are descriptive data, not identity evidence.
+        product = None
     if product is None:
-        product = Product(name=name, barcode=gtin)
+        product = Product(name=name, barcode=gtin, **package_fields)
         session.add(product)
         session.flush()
     listing = StoreProduct(store_id=store_id, product_id=product.id, product_url=normalized_url,
@@ -222,6 +258,21 @@ def add_listing(session: Session, store_id: int, name: str, url: str,
     session.add(listing)
     session.commit()
     return listing, True
+
+
+def _fill_missing_package_fields(product: Product, values: dict[str, object]) -> bool:
+    conflicts = [
+        field for field, value in values.items()
+        if value is not None and getattr(product, field) not in (None, value)
+    ]
+    if conflicts:
+        raise ValueError("Los datos de presentación contradicen el producto existente; requiere revisión manual.")
+    changed = False
+    for field, value in values.items():
+        if value is not None and getattr(product, field) is None:
+            setattr(product, field, value)
+            changed = True
+    return changed
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -245,6 +296,9 @@ def _parser() -> argparse.ArgumentParser:
     listing_add.add_argument("--url", required=True)
     listing_add.add_argument("--currency", required=True)
     listing_add.add_argument("--gtin")
+    listing_add.add_argument("--package-quantity", type=Decimal)
+    listing_add.add_argument("--package-unit")
+    listing_add.add_argument("--package-count", type=int)
     extract = commands.add_parser("extract", help="Ejecutar extracción de una tienda")
     extract.add_argument("--store-id", type=int, required=True)
     observations = commands.add_parser("observations", help="Consultar historial local")
@@ -273,7 +327,10 @@ def main(argv: list[str] | None = None) -> int:
                 item, created = add_store(session, args.name, args.base_url, args.country)
                 print(f"store_id={item.id} {'creada' if created else 'ya_existía'}")
             elif args.command == "listing":
-                item, created = add_listing(session, args.store_id, args.name, args.url, args.currency, args.gtin)
+                item, created = add_listing(
+                    session, args.store_id, args.name, args.url, args.currency, args.gtin,
+                    args.package_quantity, args.package_unit, args.package_count,
+                )
                 print(f"listing_id={item.id} product_id={item.product_id} {'creada' if created else 'ya_existía'}")
             elif args.command == "extract":
                 store = session.get(Store, args.store_id)

@@ -13,6 +13,7 @@ interface SeriesPoint {
   date: string
   price: number | null
   rate: number | null
+  parallelRate?: number | null
 }
 
 interface DualAxisTimeSeriesChartProps {
@@ -31,6 +32,7 @@ interface ChartTooltipProps {
   payload?: TooltipPoint[]
   hasPriceData: boolean
   hasRateData: boolean
+  hasParallelRateData: boolean
 }
 
 const numberFormat = new Intl.NumberFormat('es-AR', {
@@ -53,7 +55,7 @@ function formatDateLabel(value: string) {
   return new Date(year, month - 1, day).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
 }
 
-function ChartTooltip({ active, payload, hasPriceData, hasRateData }: ChartTooltipProps) {
+function ChartTooltip({ active, payload, hasPriceData, hasRateData, hasParallelRateData }: ChartTooltipProps) {
   const point = payload?.[0]?.payload
   if (!active || !point) return null
 
@@ -65,6 +67,9 @@ function ChartTooltip({ active, payload, hasPriceData, hasRateData }: ChartToolt
       )}
       {hasRateData && point.rate !== null && (
         <div className="text-violet-700">Cotización USD/ARS: {formatAmount(point.rate)} ARS por USD</div>
+      )}
+      {hasParallelRateData && point.parallelRate != null && (
+        <div className="text-rose-700">Cotizacion paralela USD/ARS: {formatAmount(point.parallelRate)} ARS por USD</div>
       )}
     </div>
   )
@@ -78,6 +83,7 @@ export default function DualAxisTimeSeriesChart({
 }: DualAxisTimeSeriesChartProps) {
   const hasPriceData = data.some((point) => point.price !== null)
   const hasRateData = data.some((point) => point.rate !== null)
+  const hasParallelRateData = data.some((point) => point.parallelRate != null)
 
   return (
     <div className={className}>
@@ -110,7 +116,7 @@ export default function DualAxisTimeSeriesChart({
                 tickFormatter={formatAxisAmount}
               />
             )}
-            {hasRateData && (
+            {(hasRateData || hasParallelRateData) && (
               <YAxis
                 yAxisId="rate"
                 orientation="right"
@@ -129,6 +135,7 @@ export default function DualAxisTimeSeriesChart({
                   payload={props.payload as TooltipPoint[] | undefined}
                   hasPriceData={hasPriceData}
                   hasRateData={hasRateData}
+                  hasParallelRateData={hasParallelRateData}
                 />
               )}
             />
@@ -159,6 +166,21 @@ export default function DualAxisTimeSeriesChart({
                 activeDot={{ r: 5 }}
                 connectNulls={false}
                 name="Cotización USD/ARS (ARS por USD)"
+                isAnimationActive={false}
+              />
+            )}
+            {hasParallelRateData && (
+              <Line
+                yAxisId="rate"
+                type="linear"
+                dataKey="parallelRate"
+                stroke="#e11d48"
+                strokeWidth={2.5}
+                strokeDasharray="3 3"
+                dot={{ r: 3, fill: '#e11d48' }}
+                activeDot={{ r: 5 }}
+                connectNulls={false}
+                name="Cotizacion paralela USD/ARS (ARS por USD)"
                 isAnimationActive={false}
               />
             )}

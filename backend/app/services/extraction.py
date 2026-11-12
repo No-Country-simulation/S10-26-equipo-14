@@ -8,8 +8,9 @@ import json
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.currency import is_supported_iso_currency
+from app.core.gtin import is_valid_gtin
 from app.extractors.base import ProductSnapshot, StoreExtractor
-from app.extractors.strategies import is_supported_iso_currency
 from app.models import Category, ExtractionRun, PriceObservation, Product, Store, StoreProduct
 from app.services.ingestion import RawPrice, normalize_decimal, persist_price
 
@@ -59,6 +60,11 @@ def _associate_product(
 ) -> None:
     category_id = _category_id(session, snapshot.category_name)
     product = session.get(Product, listing.product_id) if listing.product_id else None
+
+    if product is not None and snapshot.barcode and product.barcode and product.barcode != snapshot.barcode:
+        raise ValueError(
+            "Conflicto de GTIN con el producto canónico asociado; requiere revisión manual."
+        )
 
     if product is None and snapshot.barcode:
         product = session.scalar(select(Product).where(Product.barcode == snapshot.barcode))
@@ -184,6 +190,8 @@ def run_store_extraction(
                     not is_supported_iso_currency(snapshot.currency)
                 ):
                     raise ValueError("UNSUPPORTED: moneda ISO 4217 desconocida o no admitida.")
+                if snapshot.barcode is not None and not is_valid_gtin(snapshot.barcode):
+                    raise ValueError("UNSUPPORTED: GTIN inválido; no se asociará ni publicará el producto.")
                 for field, value, max_length in (
                     ("marca", snapshot.brand, 120),
                     ("modelo", snapshot.model, 120),
@@ -217,6 +225,9 @@ def run_store_extraction(
                 raw_price = RawPrice(
                     amount=amount,
                     promotional_price=promotional_price,
+                    observed_package_quantity=snapshot.observed_package_quantity,
+                    observed_package_unit=snapshot.observed_package_unit,
+                    observed_package_count=snapshot.observed_package_count,
                     currency=snapshot.currency,
                     source_url=snapshot.source_url,
                     is_available=snapshot.is_available,

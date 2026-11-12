@@ -14,6 +14,7 @@ def test_cors_origins_default_include_local_and_deployed_frontends(monkeypatch):
     settings = Settings(_env_file=None, database_url="sqlite://")
 
     assert settings.cors_origins == list(DEFAULT_CORS_ORIGINS)
+    assert "https://pricescope-14.vercel.app" in settings.cors_origins
 
 
 def test_runtime_defaults_are_production_and_read_only(monkeypatch):
@@ -68,6 +69,16 @@ def test_cors_allows_configured_origins():
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "https://pricescope.example.com"
+
+
+def test_vercel_origin_can_read_store_catalog(client):
+    origin = "https://pricescope-14.vercel.app"
+
+    response = client.get("/api/v1/stores", headers={"Origin": origin})
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+    assert response.headers["access-control-allow-credentials"] == "true"
 
 
 def test_cors_preflight_allows_management_methods_from_supported_frontends():
