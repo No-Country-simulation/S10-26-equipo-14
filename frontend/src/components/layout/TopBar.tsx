@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import logo from '@/assets/logo.png'
-import { Menu, Search, Bell, User, ChevronDown } from 'lucide-react'
+import { Menu, Search } from 'lucide-react'
 
 interface TopBarProps {
   onToggleSidebar: () => void
@@ -43,7 +44,7 @@ export default function TopBar({ onToggleSidebar, sidebarOpen }: TopBarProps) {
           </div>
         </div>
 
-        <form onSubmit={submitSearch} role="search" className="order-3 flex w-full min-w-0 md:order-none md:ml-auto md:w-auto md:max-w-md md:flex-1">
+        <form onSubmit={submitSearch} role="search" className="order-3 flex w-full min-w-0 md:order-0 md:ml-auto md:w-auto md:max-w-md md:flex-1">
           <label htmlFor="global-product-search" className="sr-only">Buscar productos en el catálogo</label>
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
