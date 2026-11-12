@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     database_url: str
     app_env: Literal["development", "test", "production"] = "production"
     public_read_only: bool = True
+    # Optional production admin credential; never expose it to the frontend bundle.
+    admin_api_token: SecretStr | None = None
     # Keep local Vite and the deployed frontend available by default. Additional
     # explicit origins may be supplied as JSON through CORS_ORIGINS.
     cors_origins: list[str] = Field(default_factory=lambda: list(DEFAULT_CORS_ORIGINS))
