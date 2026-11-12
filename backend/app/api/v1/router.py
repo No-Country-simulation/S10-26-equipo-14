@@ -336,8 +336,21 @@ def list_exchange_rates(
     # If the provider is temporarily unavailable, keep the stored real history.
     if rate_type in {"official", "parallel"}:
         try:
-            persist_quotes(db, MonedApiProvider(rate_type).fetch())
-            db.commit()
+            last_capture = db.scalar(
+                select(func.max(ExchangeRate.created_at)).where(
+                    ExchangeRate.source == "MonedAPI",
+                    ExchangeRate.rate_type == rate_type,
+                )
+            )
+            if last_capture is None:
+                should_refresh = True
+            else:
+                if last_capture.tzinfo is None:
+                    last_capture = last_capture.replace(tzinfo=timezone.utc)
+                should_refresh = (datetime.now(timezone.utc) - last_capture).total_seconds() >= 300
+            if should_refresh:
+                persist_quotes(db, MonedApiProvider(rate_type).fetch())
+                db.commit()
         except Exception:
             db.rollback()
 
