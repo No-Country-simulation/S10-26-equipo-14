@@ -1,4 +1,4 @@
-name: First real Cetrogar price extraction
+name: Retry Cetrogar product extraction
 
 on:
   push:
@@ -13,16 +13,9 @@ permissions:
 jobs:
   extract-cetrogar:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 3
     steps:
-      - name: Register a verified public Cetrogar product page
-        run: |
-          curl --fail --silent --show-error --max-time 25 \
-            --request POST \
-            --header "Content-Type: application/json" \
-            --data '{"store_id":8,"product_url":"https://www.cetrogar.com.ar/tv-led-55-samsung-neo-qled-55qn70f-tv3326/p?idsku=2379","product_name":"Smart TV Samsung 55QN70F 55 pulgadas Neo QLED","currency":"ARS"}' \
-            "https://pricescope-api.onrender.com/api/v1/store-products"
-      - name: Extract the live Cetrogar product price
+      - name: Extract the updated public Cetrogar product page
         run: |
           curl --fail --silent --show-error --max-time 90 \
             --request POST \
