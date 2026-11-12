@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Extract the updated public Cetrogar product page
+      - name: Retry extraction after parser fix for empty placeholder offers
         run: |
           curl --fail --silent --show-error --max-time 90 \
             --request POST \
