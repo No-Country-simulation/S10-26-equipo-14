@@ -194,7 +194,8 @@ def _offer_currency(offer, product):
 
 
 def parse_html_product(html: str, url: str, configured_currency: str | None = None,
-                       selectors: dict[str, str] | None = None) -> ProductSnapshot:
+                       selectors: dict[str, str] | None = None,
+                       expected_name: str | None = None) -> ProductSnapshot:
     sig = page_signals(html)
     candidates: list[tuple[ProductSnapshot, str]] = []
 
@@ -251,6 +252,19 @@ def parse_html_product(html: str, url: str, configured_currency: str | None = No
     unique = {}
     for candidate, format_name in candidates:
         unique.setdefault((candidate.name, candidate.amount, candidate.currency), (candidate, format_name))
+    if expected_name and len(unique) > 1:
+        expected_tokens = set(re.findall(r"[a-z0-9]+", expected_name.casefold()))
+        if expected_tokens:
+            scored = []
+            for key, value in unique.items():
+                candidate_tokens = set(re.findall(r"[a-z0-9]+", value[0].name.casefold()))
+                score = len(expected_tokens & candidate_tokens) / max(len(expected_tokens), len(candidate_tokens), 1)
+                scored.append((score, key, value))
+            best_score = max(score for score, _key, _value in scored)
+            # Use the registered listing name only when it strongly and uniquely
+            # identifies the page's primary product; never guess between ties.
+            if best_score >= 0.70:
+                unique = {key: value for score, key, value in scored if score == best_score}
     if not unique: raise ExtractionError("PRICE_NOT_FOUND: sin evidencia estructurada suficiente.")
     if len(unique) != 1: raise ExtractionError("Hay varios precios/productos candidatos; no se eligió uno arbitrariamente.")
     snapshot, format_name = next(iter(unique.values()))
