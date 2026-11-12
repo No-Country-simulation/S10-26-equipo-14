@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -23,37 +23,29 @@ def create_app(
     runtime_settings = app_settings or settings
     application = FastAPI(
         title="PriceScope API",
-        description="API para el monitoreo y análisis de precios.",
+        description="API pública para el monitoreo y análisis de precios.",
         version="0.1.0",
     )
     application.state.settings = runtime_settings
 
     @application.middleware("http")
-    async def enforce_api_read_only_mode(request: Request, call_next):
-        """Enforce public read visibility and reject mutations before routing."""
+    async def enforce_demo_access(request: Request, call_next):
+        """Expose demo reads and management/extraction operations publicly."""
         config = request.app.state.settings
-        if (
-            request.url.path in PRIVATE_GET_PATHS
-            and request.method.upper() == "GET"
-            and config.app_env != "development"
-        ):
+        if request.url.path in PRIVATE_GET_PATHS and request.method.upper() == "GET":
             return JSONResponse(status_code=404, content={"detail": PRIVATE_GET_DETAIL})
         if (
             request.url.path.startswith("/api/")
             and request.method.upper() in WRITE_METHODS
-            and not writes_enabled(config, request.headers.get("X-Admin-Token"))
+            and not writes_enabled(config)
         ):
             return JSONResponse(status_code=403, content={"detail": READ_ONLY_DETAIL})
         return await call_next(request)
 
-    # Register CORS after the read-only middleware so CORS remains the outer
-    # response wrapper, including for centrally rejected API mutations.
     application.add_middleware(
         CORSMiddleware,
         allow_origins=runtime_settings.cors_origins if cors_origins is None else cors_origins,
-        # Vercel generates unique deployment hostnames for each preview. Restrict
-        # the regex to this project's exact Vercel hostname prefix and domain.
-        allow_origin_regex=r"^https://s10-26-equipo-14(?:-[a-z0-9-]+)?\.vercel\.app$",
+        allow_origin_regex=r"^https://s10-26-equipo-14(?:-[a-z0-9-]+)?\\.vercel\\.app$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -62,11 +54,8 @@ def create_app(
     application.include_router(api_router)
 
     @application.get("/api/v1/management/access")
-    def management_access(
-        request: Request,
-        x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
-    ):
-        return {"can_manage": writes_enabled(request.app.state.settings, x_admin_token)}
+    def management_access():
+        return {"can_manage": True}
 
     @application.get("/health")
     def health_check():
