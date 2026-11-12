@@ -105,3 +105,48 @@ class DolarApiBlueProvider:
             )
             for field, side in (("compra", "buy"), ("venta", "sell"))
         )
+
+
+class MonedApiProvider:
+    """Fetch real USD/ARS official or blue quotes from MonedAPI."""
+
+    name = "MonedAPI"
+
+    def __init__(self, rate_type: str, get_json=None) -> None:
+        if rate_type not in {"official", "parallel"}:
+            raise ValueError("rate_type must be official or parallel")
+        self.rate_type = rate_type
+        self.origin = "oficial" if rate_type == "official" else "blue"
+        self._get_json = get_json or _read_json
+
+    def fetch(self) -> tuple[RawQuote, ...]:
+        payload = self._get_json(f"https://monedapi.ar/api/v2/usd/{self.origin}")
+        if not isinstance(payload, dict):
+            raise ValueError("MonedAPI returned an unexpected response.")
+        timestamp = payload.get("lastScrapedAt")
+        if not isinstance(timestamp, str):
+            raise ValueError("MonedAPI response is missing lastScrapedAt.")
+        observed_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+            raise ValueError("MonedAPI timestamp must include a timezone.")
+        observed_at = observed_at.astimezone(timezone.utc)
+
+        if self.rate_type == "official":
+            return (RawQuote(
+                rate=_decimal(payload.get("sell")),
+                observed_at=observed_at,
+                rate_type="official",
+                rate_side="reference",
+                source=self.name,
+            ),)
+
+        return tuple(
+            RawQuote(
+                rate=_decimal(payload.get(field)),
+                observed_at=observed_at,
+                rate_type="parallel",
+                rate_side=side,
+                source=self.name,
+            )
+            for field, side in (("buy", "buy"), ("sell", "sell"))
+        )
