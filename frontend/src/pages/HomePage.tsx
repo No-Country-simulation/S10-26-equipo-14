@@ -69,8 +69,11 @@ export default function HomePage() {
     load("categories", apiClient.fetchCategories(controller.signal), (categories) =>
       setData((current) => ({ ...current, categories })),
     )
-    load("products", apiClient.fetchProducts({ limit: 1, offset: 0 }, controller.signal), (products) =>
-      setData((current) => ({ ...current, productTotal: products.total })),
+    load("products", apiClient.fetchProductsWithPrices({ limit: 100, offset: 0 }, controller.signal), (products) =>
+      setData((current) => ({
+        ...current,
+        productTotal: products.items.filter((product) => product.latest_price !== null).length,
+      })),
     )
     load("rates", apiClient.fetchExchangeRates({ limit: 100 }, controller.signal), (rates) =>
       setData((current) => ({ ...current, rates })),
