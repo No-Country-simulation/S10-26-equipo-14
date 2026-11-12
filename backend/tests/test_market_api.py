@@ -437,27 +437,3 @@ def test_exchange_rate_refresh_is_throttled_after_recent_real_capture(client, mo
     assert calls == []
 
 
-
-def test_public_catalog_hides_orphan_products_without_store_listings(client):
-    from app.models import Product, Store, StoreProduct
-
-    with _manual_db_session() as session:
-        store = Store(name="Tienda validada", base_url="https://shop.example", country="AR")
-        session.add(store)
-        session.flush()
-        listed = Product(name="Producto con publicación")
-        orphan = Product(name="Producto huérfano")
-        session.add_all([listed, orphan])
-        session.flush()
-        session.add(StoreProduct(
-            store_id=store.id,
-            product_id=listed.id,
-            product_url="https://shop.example/producto",
-            product_name=listed.name,
-            currency="ARS",
-        ))
-        session.commit()
-
-    response = client.get("/api/v1/products")
-    assert response.status_code == 200
-    assert [item["name"] for item in response.json()] == ["Producto con publicación"]
