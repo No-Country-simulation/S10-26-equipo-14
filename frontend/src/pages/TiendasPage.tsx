@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Activity, AlertCircle, Check, ChevronRight, CircleHelp, Globe2, History, LoaderCircle, Plus, Play, RefreshCw, Store as StoreIcon } from 'lucide-react'
-import { apiClient, ApiError, hasAdminApiToken, setAdminApiToken } from '@/lib/api'
+import { apiClient, ApiError, getAdminApiToken, setAdminApiToken } from '@/lib/api'
 import type { Category } from '@/types/category'
 import type { CreateStoreInput, ManagedStore, StoreCategoryCandidate, StoreMonitoringInput } from '@/types/store'
 import type { ExtractionRun, PriceObservation } from '@/types'
@@ -231,7 +231,7 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
             {extracting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             {extracting ? 'Extrayendo…' : 'Ejecutar extracción'}
           </button>
-          <button type="button" onClick={analyze} disabled={!canManage || analyzing} title={!canManage ? 'Disponible solo con el backend local.' : undefined} className="inline-flex items-center justify-center gap-2 rounded-lg border border-indigo-200 px-3.5 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60">
+          <button type="button" onClick={analyze} disabled={!canManage || analyzing} title={!canManage ? 'Introduce la clave de administración para habilitar esta acción.' : undefined} className="inline-flex items-center justify-center gap-2 rounded-lg border border-indigo-200 px-3.5 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60">
             {analyzing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             {analyzing ? 'Analizando…' : store.integration_status === 'pending' ? 'Analizar sitio' : 'Repetir análisis'}
           </button>
@@ -362,7 +362,7 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage }: {
 }
 
 export default function TiendasPage() {
-  const [adminAuthenticated, setAdminAuthenticated] = useState(hasAdminApiToken())
+  const [adminAuthenticated, setAdminAuthenticated] = useState(false)
   const [adminTokenInput, setAdminTokenInput] = useState("")
   const [adminAuthLoading, setAdminAuthLoading] = useState(false)
   const [adminAuthError, setAdminAuthError] = useState<string | null>(null)
@@ -394,6 +394,29 @@ export default function TiendasPage() {
       })
       .finally(() => { if (!signal.aborted) setCategoriesLoading(false) })
     await Promise.all([storeRequest, categoryRequest])
+  }, [])
+
+  useEffect(() => {
+    const token = getAdminApiToken()
+    if (!token) {
+      setAdminAuthenticated(false)
+      return
+    }
+    let active = true
+    void apiClient.verifyAdminToken(token).then((valid) => {
+      if (!active) return
+      setAdminAuthenticated(valid)
+      if (!valid) {
+        setAdminApiToken(null)
+        setAdminAuthError("La sesión administrativa caducó o la clave fue renovada. Introduce la clave actual.")
+      }
+    }).catch(() => {
+      if (!active) return
+      setAdminApiToken(null)
+      setAdminAuthenticated(false)
+      setAdminAuthError("No se pudo validar la sesión administrativa. Inténtalo de nuevo.")
+    })
+    return () => { active = false }
   }, [])
 
   useEffect(() => {
@@ -490,7 +513,7 @@ export default function TiendasPage() {
         <CircleHelp className="mt-0.5 h-4 w-4 shrink-0" />
         <p id="store-management-availability">
           {canManage
-            ? 'Modo local: puedes registrar tiendas, analizar enlaces públicos y configurar preferencias. La administración aún no tiene autenticación; evita usar esta pantalla fuera del entorno local.'
+            ? 'Administración autenticada en el servidor. Puedes gestionar registros; el análisis y la extracción dependen de que cada tienda tenga un conector compatible.'
             : 'Modo de consulta: puedes revisar las tiendas registradas. Introduce la clave administrativa para habilitar altas, análisis y configuración. La extracción solo funcionará cuando exista un conector compatible y publicaciones configuradas.'}
         </p>
       </div>
@@ -519,7 +542,7 @@ export default function TiendasPage() {
           <StoreIcon className="mx-auto h-10 w-10 text-slate-400" />
           <h2 className="mt-4 text-lg font-semibold text-slate-900">Todavía no hay tiendas registradas</h2>
           <p className="mx-auto mt-2 max-w-lg text-sm text-slate-600">Agrega el sitio oficial de un comercio. PriceScope comprobará primero si cuenta con un analizador compatible.</p>
-          <button type="button" disabled={!canManage} title={!canManage ? 'La gestión está disponible solo en desarrollo local.' : undefined} onClick={() => setShowForm(true)} className="mt-5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">Registrar la primera tienda</button>
+          <button type="button" disabled={!canManage} title={!canManage ? 'Introduce la clave de administración para habilitar esta acción.' : undefined} onClick={() => setShowForm(true)} className="mt-5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">Registrar la primera tienda</button>
         </div>
       ) : (
         <div className="space-y-4">{stores.map((store) => <StoreCard key={store.id} store={store} categories={categories} canManage={canManage} onUpdated={updateStore} onReload={() => { void refreshStores() }} />)}</div>
