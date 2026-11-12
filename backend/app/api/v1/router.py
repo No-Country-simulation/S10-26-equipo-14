@@ -15,6 +15,8 @@ from app.schemas.catalog import (CategoryOut, PricedProductOut, PricedProductPag
                                  StoreProductOut)
 from app.schemas.market import ExchangeRateOut, PriceObservationCreate, PriceObservationOut
 from app.services.indicators import accumulated_inflation, compare_latest_prices, price_alerts, shrinkflation_signals
+from app.services.exchange_rate_providers import MonedApiProvider
+from app.services.ingestion import persist_quotes
 
 router = APIRouter(prefix="/api/v1")
 
@@ -330,8 +332,20 @@ def list_exchange_rates(
         if value is not None and (value.tzinfo is None or value.utcoffset() is None):
             raise HTTPException(status_code=422, detail=f"{field_name} debe incluir zona horaria")
     _validate_range(start, end)
-    query = select(ExchangeRate)
-    query = query.where(ExchangeRate.rate_type == rate_type)
+    # Refresh requested USD/ARS series from a real public source.
+    # If the provider is temporarily unavailable, keep the stored real history.
+    if rate_type in {"official", "parallel"}:
+        try:
+            persist_quotes(db, MonedApiProvider(rate_type).fetch())
+            db.commit()
+        except Exception:
+            db.rollback()
+
+    query = select(ExchangeRate).where(
+        ExchangeRate.rate_type == rate_type,
+        ~ExchangeRate.source.ilike("%demo%"),
+        ~ExchangeRate.source.ilike("%synthetic%"),
+    )
     if on_date is not None:
         query = query.where(ExchangeRate.observed_at <= on_date)
     if start is not None:
