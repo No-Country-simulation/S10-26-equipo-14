@@ -4,6 +4,12 @@ permissions:
   contents: read
 
 on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-build.yml"
   pull_request:
     branches:
       - develop
