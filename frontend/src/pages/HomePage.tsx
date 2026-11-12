@@ -117,7 +117,7 @@ export default function HomePage() {
 
       <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard title="Tiendas con extracción" value={loading.stores ? "…" : errors.stores ? "Error" : data.stores.filter((store) => store.is_active && store.last_extraction_status === "SUCCESS").length} subtitle={loading.stores ? "Cargando" : errors.stores ? "No disponible" : "con última ejecución exitosa"} />
-        <MetricCard title="Productos en catálogo" value={loading.products ? "…" : errors.products ? "Error" : data.productTotal ?? 0} subtitle={loading.products ? "Cargando" : errors.products ? "No disponible" : "registrados en la API"} />
+        <MetricCard title="Productos con precio" value={loading.products ? "…" : errors.products ? "Error" : data.productTotal ?? 0} subtitle={loading.products ? "Cargando" : errors.products ? "No disponible" : "con observaciones verificadas"} />
         <MetricCard title="Categorías" value={loading.categories ? "…" : errors.categories ? "Error" : data.categories.length} subtitle={loading.categories ? "Cargando" : errors.categories ? "No disponible" : "registradas en la API"} />
         <MetricCard title="Última cotización" value={loading.rates ? "…" : errors.rates ? "Error" : formatRate(latestRate)} subtitle={loading.rates ? "Cargando" : errors.rates ? "No disponible" : latestRate ? `${latestRate.rate_type} · ${latestRate.source} · ${new Date(latestRate.observed_at).toLocaleDateString("es-AR")}` : "sin datos de cotización"} />
       </div>
