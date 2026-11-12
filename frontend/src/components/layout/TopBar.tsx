@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import logo from '@/assets/logo.png'
 import { Menu, Search, Bell, User, ChevronDown } from 'lucide-react'
 
 interface TopBarProps {
@@ -20,9 +21,7 @@ export default function TopBar({ onToggleSidebar }: TopBarProps) {
             <Menu className="h-5 w-5" />
           </button>
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-base font-bold text-white">
-              P
-            </span>
+            <img src={logo} alt="PriceScope logo" className="h-9 w-9" />
             <div>
               <p className="text-lg font-semibold leading-none">PriceScope</p>
               <p className="mt-1 text-xs text-slate-500">
