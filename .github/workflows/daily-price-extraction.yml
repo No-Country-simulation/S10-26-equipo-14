@@ -1,0 +1,24 @@
+name: Daily real price collection
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  push:
+    branches: [develop]
+    paths:
+      - ".github/workflows/daily-price-extraction.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extract-registered-products:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Collect current prices from Tienda Credicoop
+        run: |
+          curl --fail --silent --show-error --max-time 120 \
+            --request POST \
+            "https://pricescope-api.onrender.com/api/v1/management/stores/1/extract"
