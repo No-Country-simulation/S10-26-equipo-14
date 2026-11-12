@@ -135,7 +135,7 @@ def list_categories(db: Session = Depends(get_db)):
 
 @router.get("/products", response_model=list[ProductOut], tags=["catalog"])
 def list_products(category_id: int | None = None, db: Session = Depends(get_db)):
-    query = select(Product).where(~Product.name.like("DEMO PriceScope %")).order_by(Product.name)
+    query = select(Product).where(~Product.name.like("DEMO PriceScope %"), Product.id.in_(select(StoreProduct.product_id).where(StoreProduct.product_id.is_not(None)).distinct())).order_by(Product.name)
     if category_id is not None:
         query = query.where(Product.category_id == category_id)
     return [_product_payload(item) for item in db.scalars(query).all()]
@@ -149,7 +149,7 @@ def list_products_paginated(
     search: str | None = Query(default=None, max_length=250),
     db: Session = Depends(get_db),
 ):
-    filters = [~Product.name.like("DEMO PriceScope %")]
+    filters = [~Product.name.like("DEMO PriceScope %"), Product.id.in_(select(StoreProduct.product_id).where(StoreProduct.product_id.is_not(None)).distinct())]
     if category_id is not None:
         filters.append(Product.category_id == category_id)
     pattern = _search_pattern(search)
@@ -179,7 +179,7 @@ def list_products_with_latest_prices(
 ):
     """List canonical products with their latest observation across stores."""
     _validate_range(start, end)
-    filters = [~Product.name.like("DEMO PriceScope %")]
+    filters = [~Product.name.like("DEMO PriceScope %"), Product.id.in_(select(StoreProduct.product_id).where(StoreProduct.product_id.is_not(None)).distinct())]
     if category_id is not None:
         filters.append(Product.category_id == category_id)
     pattern = _search_pattern(search)
