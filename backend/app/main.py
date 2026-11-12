@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -41,7 +41,7 @@ def create_app(
         if (
             request.url.path.startswith("/api/")
             and request.method.upper() in WRITE_METHODS
-            and not writes_enabled(config)
+            and not writes_enabled(config, request.headers.get("X-Admin-Token"))
         ):
             return JSONResponse(status_code=403, content={"detail": READ_ONLY_DETAIL})
         return await call_next(request)
@@ -60,6 +60,13 @@ def create_app(
     )
 
     application.include_router(api_router)
+
+    @application.get("/api/v1/management/access")
+    def management_access(
+        request: Request,
+        x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ):
+        return {"can_manage": writes_enabled(request.app.state.settings, x_admin_token)}
 
     @application.get("/health")
     def health_check():

@@ -1,5 +1,7 @@
 """Central read-only policy for HTTP API mutations."""
 
+import hmac
+
 from app.core.config import Settings
 
 
@@ -9,14 +11,19 @@ PRIVATE_GET_PATHS = frozenset({"/api/v1/store-products"})
 PRIVATE_GET_DETAIL = "Recurso no disponible en el modo público."
 
 
-def writes_enabled(config: Settings) -> bool:
-    """Only an explicitly writable development environment may mutate data.
+def writes_enabled(config: Settings, supplied_token: str | None = None) -> bool:
+    """Allow local writes or authenticated production administration.
 
-    Production stays read-only even when PUBLIC_READ_ONLY is accidentally set
-    to false. Test deployments are also fail-closed; tests can construct an
-    isolated development app when they need to exercise writable behavior.
+    Production mutations require a separately configured secret and a
+    constant-time token comparison. Test environments remain fail-closed.
     """
-    return config.app_env == "development" and not config.public_read_only
+    if config.app_env == "development" and not config.public_read_only:
+        return True
+    if config.app_env != "production" or config.admin_api_token is None or not supplied_token:
+        return False
+    return hmac.compare_digest(
+        config.admin_api_token.get_secret_value(), supplied_token
+    )
 
 
 def is_development(config: Settings) -> bool:

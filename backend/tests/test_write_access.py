@@ -286,3 +286,53 @@ def test_test_environment_is_fail_closed_even_if_read_only_flag_is_false(write_p
     with client:
         response = client.post("/api/v1/price-observations", json={})
     assert response.status_code == 403
+
+
+def test_production_admin_token_enables_only_authenticated_management_writes(write_policy_context):
+    make_client, session_scope = write_policy_context
+    config = Settings(
+        _env_file=None,
+        database_url="sqlite://",
+        cors_origins=[],
+        app_env="production",
+        public_read_only=True,
+        admin_api_token="test-admin-secret",
+    )
+    api = create_app(cors_origins=[], app_settings=config)
+
+    def override_db():
+        with session_scope() as session:
+            yield session
+
+    api.dependency_overrides[get_db] = override_db
+    client = TestClient(api)
+    with client:
+        assert client.get("/api/v1/management/access").json() == {"can_manage": False}
+        assert client.get(
+            "/api/v1/management/access",
+            headers={"X-Admin-Token": "wrong-secret"},
+        ).json() == {"can_manage": False}
+        assert client.get(
+            "/api/v1/management/access",
+            headers={"X-Admin-Token": "test-admin-secret"},
+        ).json() == {"can_manage": True}
+
+        payload = {
+            "name": "Tienda administrada",
+            "base_url": "https://managed-store.example",
+            "country": "AR",
+            "currency": "ARS",
+        }
+        assert client.post("/api/v1/management/stores", json=payload).status_code == 403
+        assert client.post(
+            "/api/v1/management/stores",
+            json=payload,
+            headers={"X-Admin-Token": "wrong-secret"},
+        ).status_code == 403
+        created = client.post(
+            "/api/v1/management/stores",
+            json=payload,
+            headers={"X-Admin-Token": "test-admin-secret"},
+        )
+        assert created.status_code == 201
+        assert created.json()["name"] == "Tienda administrada"
