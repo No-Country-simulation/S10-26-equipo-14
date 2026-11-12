@@ -1,32 +1,31 @@
 import { createBrowserRouter } from 'react-router-dom'
 import Layout from '../components/layout/Layout'
-import AboutPage from '../pages/AboutPage'
-import HomePage from '../pages/HomePage'
-import DemoPage from '../pages/DemoPage'
-import CatalogoPage from '../pages/CatalogoPage'
-import DivisasPage from '../pages/DivisasPage'
-
-const ComingSoon = () => (
-  <section className="mx-auto max-w-2xl py-12 text-center">
-    <h1 className="text-2xl font-bold text-slate-900">Página en construcción</h1>
-    <p className="mt-4 text-slate-600">
-      Esta sección forma parte de las próximas épicas del roadmap (Semana 2 en adelante).
-    </p>
-  </section>
-)
+import {
+  AboutRoute,
+  AlertasRoute,
+  CatalogoRoute,
+  ComparativasRoute,
+  DemoRoute,
+  DivisasRoute,
+  HomeRoute,
+  NotFoundRoute,
+  TiendasRoute,
+} from './route-pages'
 
 export const router = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
     children: [
-      { index: true, element: <HomePage /> },
-      { path: 'about', element: <AboutPage /> },
-      { path: 'demo', element: <DemoPage /> },
-      { path: 'catalogo', element: <CatalogoPage /> },
-      { path: 'divisas', element: <DivisasPage /> },
-      { path: 'comparativas', element: <ComingSoon /> },
-      { path: 'alertas', element: <ComingSoon /> },
+      { index: true, element: <HomeRoute /> },
+      { path: 'about', element: <AboutRoute /> },
+      { path: 'demo', element: <DemoRoute /> },
+      { path: 'catalogo', element: <CatalogoRoute /> },
+      { path: 'divisas', element: <DivisasRoute /> },
+      { path: 'tiendas', element: <TiendasRoute /> },
+      { path: 'comparativas', element: <ComparativasRoute /> },
+      { path: 'alertas', element: <AlertasRoute /> },
+      { path: '*', element: <NotFoundRoute /> },
     ],
   },
 ])

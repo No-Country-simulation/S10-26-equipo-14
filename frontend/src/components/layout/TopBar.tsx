@@ -1,93 +1,73 @@
 import { useState } from 'react'
-import { Menu, Search, Bell, User, ChevronDown } from 'lucide-react'
+import type { FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Menu, Search } from 'lucide-react'
 
 interface TopBarProps {
   onToggleSidebar: () => void
+  sidebarOpen: boolean
 }
 
-export default function TopBar({ onToggleSidebar }: TopBarProps) {
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
+export default function TopBar({ onToggleSidebar, sidebarOpen }: TopBarProps) {
+  const [query, setQuery] = useState('')
+  const navigate = useNavigate()
+
+  const submitSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const search = query.trim()
+    navigate(search ? `/catalogo?search=${encodeURIComponent(search)}` : '/catalogo')
+    if (sidebarOpen) onToggleSidebar()
+  }
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
-      <div className="flex items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-3">
+      <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-3 gap-y-3 px-3 py-3 sm:px-4 md:flex-nowrap">
+        <div className="flex min-w-0 flex-1 items-center gap-3 md:flex-none">
           <button
+            type="button"
             onClick={onToggleSidebar}
-            className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg md:hidden"
-            aria-label="Abrir menú de navegación"
+            className="shrink-0 rounded-lg p-2 text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 md:hidden"
+            aria-label={sidebarOpen ? 'Cerrar menú de navegación' : 'Abrir menú de navegación'}
+            aria-expanded={sidebarOpen}
+            aria-controls="primary-navigation"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-5 w-5" aria-hidden="true" />
           </button>
-          <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-base font-bold text-white">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-base font-bold text-white" aria-hidden="true">
               P
             </span>
-            <div>
+            <div className="min-w-0">
               <p className="text-lg font-semibold leading-none">PriceScope</p>
-              <p className="mt-1 text-xs text-slate-500">
-                Monitor de Inflación Real Multimoneda
+              <p className="mt-1 hidden truncate text-xs text-slate-500 sm:block">
+                Monitor de precios y cotizaciones
               </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-4 w-full md:max-w-md">
-          <div className="relative w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <form onSubmit={submitSearch} role="search" className="order-3 flex w-full min-w-0 md:order-none md:ml-auto md:w-auto md:max-w-md md:flex-1">
+          <label htmlFor="global-product-search" className="sr-only">Buscar productos en el catálogo</label>
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <input
-              type="text"
-              placeholder="Buscar productos, tiendas o categorías..."
-              className="w-full pl-10 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              id="global-product-search"
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Buscar productos en el catálogo…"
+              className="h-10 w-full rounded-l-lg border border-r-0 border-slate-300 pl-10 pr-3 text-sm focus:z-10 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
-        </div>
-
-        <div className="flex items-center gap-3">
           <button
-            className="relative p-2 text-slate-600 hover:bg-slate-100 rounded-lg md:hidden"
-            aria-label="Notificaciones"
+            type="submit"
+            className="inline-flex h-10 shrink-0 items-center gap-2 rounded-r-lg border border-indigo-600 bg-indigo-600 px-3 text-sm font-medium text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
           >
-            <Bell className="h-5 w-5" />
-            <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500 border-2 border-white" />
+            <Search className="h-4 w-4" aria-hidden="true" />
+            <span>Buscar</span>
           </button>
-          <button
-            onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-full hover:bg-slate-200"
-          >
-            <User className="h-4 w-4" />
-            <span className="hidden md:inline">Analista</span>
-            <ChevronDown className="h-4 w-4" />
-          </button>
-        </div>
+        </form>
       </div>
-
-      {userMenuOpen && (
-        <div
-          className="absolute right-4 top-16 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-2 z-50"
-          onClick={() => setUserMenuOpen(false)}
-        >
-          <div className="px-4 py-2 text-xs text-slate-500 border-b border-slate-100">
-            analista@pricescope.com
-          </div>
-          <button
-            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
-            onClick={(e) => {
-              e.stopPropagation()
-            }}
-          >
-            Perfil
-          </button>
-          <button
-            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
-            onClick={(e) => {
-              e.stopPropagation()
-            }}
-          >
-            Cerrar sesión
-          </button>
-        </div>
-      )}
     </header>
   )
 }

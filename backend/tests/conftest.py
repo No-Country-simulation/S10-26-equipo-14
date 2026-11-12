@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.db.session import get_db
+from app.core.config import Settings
 from app.main import app
 from app.models import Category, ExchangeRate, ExtractionRun, PriceObservation, Product, Store, StoreProduct
 
@@ -32,9 +33,19 @@ def client():
         with session_factory() as session:
             yield session
 
+    previous_settings = app.state.settings
+    app.state.settings = Settings(
+        _env_file=None,
+        database_url="sqlite://",
+        app_env="development",
+        public_read_only=False,
+    )
     app.dependency_overrides[get_db] = override_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
-    Base.metadata.drop_all(engine)
-    engine.dispose()
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
+        app.state.settings = previous_settings
+        Base.metadata.drop_all(engine)
+        engine.dispose()
