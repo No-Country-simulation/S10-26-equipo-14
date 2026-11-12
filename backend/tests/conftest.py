@@ -38,7 +38,6 @@ def client():
         _env_file=None,
         database_url="sqlite://",
         app_env="development",
-        public_read_only=False,
     )
     app.dependency_overrides[get_db] = override_db
     try:
