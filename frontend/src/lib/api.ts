@@ -107,7 +107,7 @@ export function setAdminApiToken(token: string | null) {
   }
 }
 
-function getAdminApiToken(): string | null {
+export function getAdminApiToken(): string | null {
   if (adminApiToken) return adminApiToken
   if (typeof window === "undefined") return null
   return window.sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)
