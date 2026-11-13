@@ -94,6 +94,36 @@ def _coverage(client, store_id):
 
 
 @pytest.mark.parametrize(
+    ("name", "base_url", "product_url"),
+    [
+        ("Cetrogar", "https://www.cetrogar.com.ar", "https://www.cetrogar.com.ar/product/p"),
+        ("Tienda Credicoop", "https://tiendacredicoop.coop", "https://tiendacredicoop.coop/product/p"),
+        ("On City", "https://www.oncity.com", "https://www.oncity.com/product/p"),
+    ],
+)
+def test_verified_retailer_listings_count_toward_operational_coverage(
+    coverage_context, name, base_url, product_url
+):
+    client, factory = coverage_context
+    observed_at = datetime(2026, 11, 12, 19, tzinfo=timezone.utc)
+    with factory() as session:
+        store = _store(session, name=name)
+        store.base_url = base_url
+        listing = _listing(session, store, url=product_url)
+        _run(session, store, "SUCCESS", observed_at)
+        session.add(PriceObservation(store_product_id=listing.id, amount=100,
+                                    currency="ARS", observed_at=observed_at,
+                                    source_url=product_url, is_available=True))
+        session.commit()
+        store_id = store.id
+
+    row = _coverage(client, store_id)
+    assert row["connector_configured"] is True
+    assert row["coverage_status"] == "operational"
+    assert row["is_operational"] is True
+
+
+@pytest.mark.parametrize(
     ("run_status", "persist_observation", "expected"),
     [
         ("SUCCESS", True, "operational"),
