@@ -4,7 +4,9 @@ import DualAxisTimeSeriesChart from "@/components/charts/DualAxisTimeSeriesChart
 import FilterBar, { type FilterState } from "@/components/filters/FilterBar"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ApiError, apiClient } from "@/lib/api"
+import { isDemoName, isSyntheticSource } from "@/lib/marketRecords.js"
 import type { Category, ExchangeRate, PriceObservation, Store } from "@/types"
+import type { StoreProduct } from "@/types/storeProduct"
 
 const PAGE_LIMIT = 1000
 
@@ -60,6 +62,7 @@ export default function DivisasPage() {
     search: "",
   })
   const [stores, setStores] = React.useState<Store[]>([])
+  const [storeProducts, setStoreProducts] = React.useState<StoreProduct[]>([])
   const [categories, setCategories] = React.useState<Category[]>([])
   const [observations, setObservations] = React.useState<PriceObservation[]>([])
   const [exchangeRates, setExchangeRates] = React.useState<ExchangeRate[]>([])
@@ -88,14 +91,17 @@ export default function DivisasPage() {
     void Promise.allSettled([
       apiClient.fetchStores(controller.signal),
       apiClient.fetchCategories(controller.signal),
+      apiClient.fetchStoreProducts(undefined, controller.signal),
     ])
-      .then(([storesResult, categoriesResult]) => {
+      .then(([storesResult, categoriesResult, listingsResult]) => {
         if (!active) return
         const errors: string[] = []
         if (storesResult.status === "fulfilled") setStores(storesResult.value)
         else { setStores([]); errors.push("Tiendas: " + errorMessage(storesResult.reason)) }
         if (categoriesResult.status === "fulfilled") setCategories(categoriesResult.value)
         else { setCategories([]); errors.push("Categorías: " + errorMessage(categoriesResult.reason)) }
+        if (listingsResult.status === "fulfilled") setStoreProducts(listingsResult.value)
+        else { setStoreProducts([]); errors.push("Publicaciones: " + errorMessage(listingsResult.reason)) }
         setFilterErrors(errors)
       })
       .finally(() => {
@@ -143,11 +149,18 @@ export default function DivisasPage() {
     }
   }, [filters.categoryId, filters.dateFrom, filters.dateTo, filters.search, filters.storeId, retry])
 
-  const arsObservations = observations.filter((item) => item.currency === "ARS" && item.is_available === true)
-  const arsUsdReferenceRates = exchangeRates.filter(
+  const realStoreIds = new Set(stores.filter((store) => !isDemoName(store.name)).map((store) => store.id))
+  const realStoreProducts = storeProducts.filter((listing) => realStoreIds.has(listing.store_id) && !isDemoName(listing.product_name))
+  const realStoreProductIds = new Set(realStoreProducts.map((listing) => listing.id))
+  const arsObservations = observations.filter((item) =>
+    item.currency === "ARS" && item.is_available !== false && realStoreProductIds.has(item.store_product_id),
+  )
+  const verifiedExchangeRates = exchangeRates.filter((item) => !isSyntheticSource(item.source))
+  const excludedSyntheticRateCount = exchangeRates.length - verifiedExchangeRates.length
+  const arsUsdReferenceRates = verifiedExchangeRates.filter(
     (item) => item.base_currency === "USD" && item.quote_currency === "ARS" && item.rate_side === "reference",
   )
-  const parallelUsdRates = exchangeRates.filter(
+  const parallelUsdRates = verifiedExchangeRates.filter(
     (item) => item.base_currency === "USD" && item.quote_currency === "ARS" && item.rate_type === "parallel" && item.rate_side === "sell",
   )
   const priceByDate = groupByTimestamp(arsObservations.map((item) => ({
@@ -163,12 +176,12 @@ export default function DivisasPage() {
     value: Number(item.rate),
   })))
   const chartData = mergeSeries(priceByDate, rateByDate, parallelByDate)
-  const hasSyntheticRates = arsUsdReferenceRates.some((item) => /demo|sint[eé]tic|synthetic/i.test(item.source))
   const seriesWithData = [priceByDate.length, rateByDate.length, parallelByDate.length].filter((days) => days > 0)
   const hasInsufficientHistory = seriesWithData.some((points) => points < 2)
   const latestOfficial = [...arsUsdReferenceRates].sort((left, right) => Date.parse(right.observed_at) - Date.parse(left.observed_at))[0]
   const latestParallel = [...parallelUsdRates].sort((left, right) => Date.parse(right.observed_at) - Date.parse(left.observed_at))[0]
-  const selectedStore = filters.storeId ? stores.find((store) => store.id === filters.storeId)?.name : null
+  const publicStores = stores.filter((store) => !isDemoName(store.name))
+  const selectedStore = filters.storeId ? publicStores.find((store) => store.id === filters.storeId)?.name : null
   const selectedCategory = filters.categoryId
     ? categories.find((category) => category.id === filters.categoryId)?.name
     : null
@@ -196,7 +209,7 @@ export default function DivisasPage() {
       )}
 
       <FilterBar
-        stores={stores}
+        stores={publicStores}
         categories={categories}
         onFiltersChange={updateFilters}
         initialFilters={filters}
@@ -212,9 +225,9 @@ export default function DivisasPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {hasSyntheticRates && !loading && (
+          {excludedSyntheticRateCount > 0 && !loading && (
             <p role="note" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              Las cotizaciones mostradas son datos sintéticos de demostración; no representan valores reales.
+              Se excluyeron {excludedSyntheticRateCount} cotizaciones marcadas como demo o sintéticas. La gráfica solo usa observaciones de tiendas reales y cotizaciones no sintéticas.
             </p>
           )}
           {loading ? (
