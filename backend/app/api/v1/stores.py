@@ -301,7 +301,13 @@ def _canonical_host(host: str | None) -> str:
 def _validate_listing_url(store: Store, product_url: str) -> None:
     base = urlsplit(store.base_url)
     page = urlsplit(product_url)
-    supported_domains = ("carrefour.com.ar", "fravega.com")
+    supported_domains = (
+        "carrefour.com.ar",
+        "fravega.com",
+        "cetrogar.com.ar",
+        "tiendacredicoop.coop",
+        "oncity.com",
+    )
     retailer_host = _canonical_host(base.hostname)
     product_host = _canonical_host(page.hostname)
     blocked_path = any(

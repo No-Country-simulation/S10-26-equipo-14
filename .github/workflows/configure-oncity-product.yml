@@ -1,0 +1,42 @@
+name: Configure and extract verified On City product
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  configure-and-extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PRICESCOPE_ADMIN_API_TOKEN: ${{ secrets.PRICESCOPE_ADMIN_API_TOKEN }}
+      PRODUCT_URL: https://www.oncity.com/smart-tv-samsung-qled-85-q7f-4k-vision-ai-tizen-os-159917/p
+    steps:
+      - name: Require the protected backend credential
+        run: |
+          if [ -z "$PRICESCOPE_ADMIN_API_TOKEN" ]; then
+            echo "::error::Configure repository secret PRICESCOPE_ADMIN_API_TOKEN with the same value as Render ADMIN_API_TOKEN."
+            exit 1
+          fi
+      - name: Register the verified source listing if needed
+        run: |
+          listings=$(curl --fail --silent --show-error --max-time 45 \
+            "https://pricescope-api.onrender.com/api/v1/management/stores/11/store-products")
+          if printf '%s' "$listings" | jq -e --arg url "$PRODUCT_URL" 'any(.[]; .product_url == $url)' >/dev/null; then
+            echo "The verified product listing is already registered."
+          else
+            curl --fail --silent --show-error --max-time 45 \
+              --request POST \
+              --header "X-Admin-API-Token: $PRICESCOPE_ADMIN_API_TOKEN" \
+              --header "Content-Type: application/json" \
+              --data '{"product_url":"https://www.oncity.com/smart-tv-samsung-qled-85-q7f-4k-vision-ai-tizen-os-159917/p","product_name":"Smart TV Samsung QLED 85 Q7F 4K Vision AI Tizen OS","external_id":"159917","currency":"ARS"}' \
+              "https://pricescope-api.onrender.com/api/v1/management/stores/11/store-products"
+          fi
+      - name: Extract and persist the current public product price
+        run: |
+          curl --fail --silent --show-error --max-time 120 \
+            --request POST \
+            --header "X-Admin-API-Token: $PRICESCOPE_ADMIN_API_TOKEN" \
+            "https://pricescope-api.onrender.com/api/v1/management/stores/11/extract"
