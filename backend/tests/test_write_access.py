@@ -30,6 +30,7 @@ EXPECTED_MUTATIONS = {
     ("POST", "/api/v1/management/stores/{store_id}/analyze"),
     ("POST", "/api/v1/management/stores/{store_id}/extract"),
     ("POST", "/api/v1/management/stores/{store_id}/store-products"),
+    ("PUT", "/api/v1/management/stores/{store_id}/base-url"),
     ("POST", "/api/v1/management/ingestion/daily"),
     ("PUT", "/api/v1/management/stores/{store_id}/monitoring"),
 }
@@ -255,7 +256,8 @@ def test_production_blocks_every_registered_mutation_without_database_changes(wr
     with client:
         for method, route_path in sorted(registered_mutations):
             concrete_path = route_path.replace("{store_id}", "1")
-            response = client.request(method, concrete_path, json={})
+            payload = {"base_url": "https://diaonline.supermercadosdia.com.ar"} if route_path.endswith("/base-url") else {}
+            response = client.request(method, concrete_path, json=payload)
             assert response.status_code == 403, (method, route_path, response.text)
             assert response.json()["detail"] == READ_ONLY_DETAIL
 
@@ -279,7 +281,8 @@ def test_production_mutations_remain_protected_when_an_admin_token_is_configured
     with client:
         for method, route_path in sorted(mutations):
             concrete_path = route_path.replace("{store_id}", "1")
-            response = client.request(method, concrete_path, json={})
+            payload = {"base_url": "https://diaonline.supermercadosdia.com.ar"} if route_path.endswith("/base-url") else {}
+            response = client.request(method, concrete_path, json=payload)
             assert response.status_code == 401, (method, route_path, response.text)
 
     assert snapshot_database(session_scope) == before

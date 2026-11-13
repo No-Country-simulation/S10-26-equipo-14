@@ -39,6 +39,19 @@ class StoreCreate(BaseModel):
         return value
 
 
+class StoreBaseURLUpdate(BaseModel):
+    base_url: AnyHttpUrl
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_public_root_url(cls, value: AnyHttpUrl) -> AnyHttpUrl:
+        if value.scheme != "https" or not value.host or value.username or value.password:
+            raise ValueError("La tienda debe usar una URL HTTPS p?blica sin credenciales.")
+        if value.path not in {"", "/"} or value.query or value.fragment:
+            raise ValueError("Introduce la URL principal del sitio, sin rutas, par?metros ni fragmentos.")
+        return value
+
+
 class CategoryCandidateOut(BaseModel):
     name: str
     source_url: str
