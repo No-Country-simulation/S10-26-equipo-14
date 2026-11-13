@@ -98,7 +98,7 @@ def _barcode(data: dict) -> str | None:
     return None
 
 
-def parse_product_page(html: str, source_url: str) -> ProductSnapshot:
+def parse_product_page(html: str, source_url: str, configured_currency: str | None = None) -> ProductSnapshot:
     """Read one unambiguous Product + Offer JSON-LD record from HTML."""
     parser = _ProductPageParser()
     parser.feed(html)
@@ -112,7 +112,7 @@ def parse_product_page(html: str, source_url: str) -> ProductSnapshot:
 
     if len(products) != 1:
         from app.extractors.strategies import parse_html_product
-        return parse_html_product(html, source_url)
+        return parse_html_product(html, source_url, configured_currency=configured_currency)
 
     product = products[0]
     name = _optional_text(product.get("name"))
@@ -298,4 +298,4 @@ class FravegaExtractor:
         if not self._robots or not self._robots.can_fetch(_USER_AGENT, listing.product_url):
             raise ExtractionError("robots.txt no autoriza consultar esta URL de producto.")
         html = self._request_text(listing.product_url)
-        return parse_product_page(html, listing.product_url)
+        return parse_product_page(html, listing.product_url, configured_currency=listing.currency)

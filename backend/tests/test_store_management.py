@@ -26,7 +26,8 @@ def management_context(monkeypatch):
         app_settings=Settings(
             _env_file=None,
             database_url="sqlite://",
-            app_env="production",
+            app_env="development",
+            public_read_only=False,
         ),
     )
 
@@ -45,7 +46,7 @@ def management_context(monkeypatch):
     engine.dispose()
 
 
-def test_production_store_management_writes_are_public(management_context):
+def test_explicit_development_store_management_writes_are_enabled(management_context):
     client, factory = management_context
     response = client.post("/api/v1/management/stores", json={
         "name": "Example", "base_url": "https://example.com", "country": "AR", "currency": "ARS",
@@ -106,9 +107,9 @@ def test_analysis_proposals_require_review_before_monitoring_activation(manageme
         "category_ids": [7], "currency": "ARS", "interval_hours": 48, "enabled": True,
     })
     assert activated.status_code == 200
-    assert activated.json()["integration_status"] == "active"
+    assert activated.json()["integration_status"] == "configuration_required"
     assert activated.json()["monitoring_enabled"] is True
-    assert "todavía no está disponible" in activated.json()["analysis_message"]
+    assert "extracción satisfactoria" in activated.json()["analysis_message"]
 
     with factory() as session:
         run = session.scalar(select(ExtractionRun))
@@ -166,12 +167,20 @@ def test_extract_endpoint_persists_run_and_history_without_network(management_co
     assert payload["records_seen"] == 1
     assert payload["observations_created"] == 1
     assert payload["store_name"] == "Fixture Store"
+    assert client.get("/api/v1/management/stores").json()[0]["integration_status"] == "active"
 
     history = client.get(f"/api/v1/management/stores/{store_id}/extractions?limit=5")
     assert history.status_code == 200
     assert len(history.json()) == 1
     assert history.json()[0]["run_id"] == payload["run_id"]
     assert history.json()[0]["observations_created"] == 1
+    run_observations = client.get(
+        f"/api/v1/management/stores/{store_id}/extractions/{payload['run_id']}/observations"
+    )
+    assert run_observations.status_code == 200
+    assert len(run_observations.json()) == 1
+    assert run_observations.json()[0]["amount"] == "123.45"
+    assert run_observations.json()[0]["currency"] == "ARS"
     assert len(client.get("/api/v1/price-observations", params={"store_id": store_id}).json()) == 1
     with factory() as session:
         run = session.get(ExtractionRun, payload["run_id"])

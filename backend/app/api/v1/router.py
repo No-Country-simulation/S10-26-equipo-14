@@ -1,22 +1,21 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, tuple_
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.db.session import get_db
+from app.api.v1.management_security import require_admin_api_token
 from app.services.product_normalization import calculate_unit_prices, normalize_quantity
-from app.models import Category, ExchangeRate, PriceObservation, Product, Store, StoreProduct
+from app.models import Category, ExchangeRate, ExtractionRun, PriceObservation, Product, Store, StoreProduct
 from app.schemas.catalog import (CategoryOut, PricedProductOut, PricedProductPageOut,
                                  ProductOut, ProductPageOut, StoreOut, StoreProductCreate,
                                  StoreProductOut)
 from app.schemas.market import ExchangeRateOut, PriceObservationCreate, PriceObservationOut
 from app.services.indicators import accumulated_inflation, compare_latest_prices, price_alerts, shrinkflation_signals
-from app.services.exchange_rate_providers import MonedApiProvider
-from app.services.ingestion import persist_quotes
 
 router = APIRouter(prefix="/api/v1")
 
@@ -124,8 +123,82 @@ def _latest_price_payload(
 
 
 @router.get("/stores", response_model=list[StoreOut], tags=["catalog"])
-def list_stores(db: Session = Depends(get_db)):
-    return db.scalars(select(Store).where(Store.is_active.is_(True), ~Store.name.like("DEMO PriceScope %")).order_by(Store.name)).all()
+def list_stores(
+    with_observations: bool = False,
+    category_id: int | None = Query(default=None, gt=0),
+    start: datetime | None = None,
+    end: datetime | None = None,
+    eligible_for: Literal["comparisons", "alerts"] | None = None,
+    db: Session = Depends(get_db),
+):
+    _validate_range(start, end)
+    query = select(Store).where(~Store.name.like("DEMO PriceScope %"))
+    if with_observations:
+        query = (
+            query.join(StoreProduct, StoreProduct.store_id == Store.id)
+            .join(PriceObservation, PriceObservation.store_product_id == StoreProduct.id)
+            .outerjoin(Product, Product.id == StoreProduct.product_id)
+        )
+        query = query.where(
+            StoreProduct.product_id.is_not(None),
+            ~Product.name.like("DEMO PriceScope %"),
+            PriceObservation.is_available.is_not(False),
+        )
+        if start is not None:
+            query = query.where(PriceObservation.observed_at >= start)
+        if end is not None:
+            query = query.where(PriceObservation.observed_at <= end)
+        if category_id is not None:
+            query = query.where(
+                (Product.category_id == category_id) | (StoreProduct.category_id == category_id)
+            )
+        if eligible_for == "comparisons":
+            eligible_pairs = (
+                select(StoreProduct.product_id, PriceObservation.currency)
+                .join(PriceObservation, PriceObservation.store_product_id == StoreProduct.id)
+                .join(Product, Product.id == StoreProduct.product_id)
+                .join(Store, Store.id == StoreProduct.store_id)
+                .where(
+                    StoreProduct.product_id.is_not(None),
+                    PriceObservation.is_available.is_not(False),
+                    ~Product.name.like("DEMO PriceScope %"),
+                    ~Store.name.like("DEMO PriceScope %"),
+                    *([PriceObservation.observed_at >= start] if start is not None else []),
+                    *([PriceObservation.observed_at <= end] if end is not None else []),
+                    *([(Product.category_id == category_id) | (StoreProduct.category_id == category_id)] if category_id is not None else []),
+                )
+                .group_by(StoreProduct.product_id, PriceObservation.currency)
+                .having(func.count(func.distinct(StoreProduct.store_id)) >= 2)
+            )
+            query = query.where(
+                tuple_(StoreProduct.product_id, PriceObservation.currency).in_(eligible_pairs)
+            )
+        elif eligible_for == "alerts":
+            eligible_listings = (
+                select(StoreProduct.id, PriceObservation.currency)
+                .join(PriceObservation, PriceObservation.store_product_id == StoreProduct.id)
+                .join(Product, Product.id == StoreProduct.product_id)
+                .join(Store, Store.id == StoreProduct.store_id)
+                .where(
+                    StoreProduct.product_id.is_not(None),
+                    PriceObservation.is_available.is_not(False),
+                    ~Product.name.like("DEMO PriceScope %"),
+                    ~Store.name.like("DEMO PriceScope %"),
+                    *([PriceObservation.observed_at >= start] if start is not None else []),
+                    *([PriceObservation.observed_at <= end] if end is not None else []),
+                    *([(Product.category_id == category_id) | (StoreProduct.category_id == category_id)] if category_id is not None else []),
+                )
+                .group_by(StoreProduct.id, PriceObservation.currency)
+                .having(func.count(PriceObservation.id) >= 2)
+            )
+            query = query.where(
+                tuple_(StoreProduct.id, PriceObservation.currency).in_(eligible_listings)
+            )
+    elif eligible_for is not None:
+        raise HTTPException(status_code=422, detail="eligible_for requiere with_observations=true")
+    else:
+        query = query.where(Store.is_active.is_(True))
+    return db.scalars(query.distinct().order_by(Store.name)).all()
 
 
 @router.get("/categories", response_model=list[CategoryOut], tags=["catalog"])
@@ -175,6 +248,7 @@ def list_products_with_latest_prices(
     search: str | None = Query(default=None, max_length=250),
     start: datetime | None = None,
     end: datetime | None = None,
+    verified_only: bool = False,
     db: Session = Depends(get_db),
 ):
     """List canonical products with their latest observation across stores."""
@@ -191,6 +265,37 @@ def list_products_with_latest_prices(
         observation_window.append(PriceObservation.observed_at >= start)
     if end is not None:
         observation_window.append(PriceObservation.observed_at <= end)
+    latest_run_id = None
+    if verified_only:
+        current_after = datetime.now(timezone.utc) - timedelta(hours=48)
+        latest_run = aliased(ExtractionRun)
+        latest_run_id = (
+            select(latest_run.id)
+            .where(latest_run.store_id == Store.id, ~latest_run.source.like("analysis:%"))
+            .order_by(latest_run.started_at.desc(), latest_run.id.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        verified_conditions = [
+            Store.is_active.is_(True),
+            Store.name.not_like("DEMO PriceScope %"),
+            Store.base_url.in_(("https://fravega.com", "https://www.fravega.com")),
+            StoreProduct.product_name.not_like("DEMO PriceScope %"),
+            PriceObservation.is_available.is_(True),
+            PriceObservation.observed_at >= current_after,
+            PriceObservation.observed_at == ExtractionRun.started_at,
+            ExtractionRun.id == latest_run_id,
+            ExtractionRun.status == "SUCCESS",
+        ]
+        eligible = (
+            select(PriceObservation.id)
+            .join(StoreProduct, PriceObservation.store_product_id == StoreProduct.id)
+            .join(Store, Store.id == StoreProduct.store_id)
+            .join(ExtractionRun, ExtractionRun.store_id == Store.id)
+            .where(StoreProduct.product_id == Product.id, *observation_window, *verified_conditions)
+            .exists()
+        )
+        filters.append(eligible)
     if observation_window:
         in_window = (
             select(PriceObservation.id)
@@ -201,10 +306,20 @@ def list_products_with_latest_prices(
         filters.append(in_window)
 
     total = db.scalar(select(func.count()).select_from(Product).where(*filters)) or 0
-    latest_observation_id = (
+    latest_prices = (
         select(PriceObservation.id)
         .join(StoreProduct, PriceObservation.store_product_id == StoreProduct.id)
         .where(StoreProduct.product_id == Product.id, *observation_window)
+    )
+    if verified_only:
+        latest_prices = (
+            latest_prices
+            .join(Store, Store.id == StoreProduct.store_id)
+            .join(ExtractionRun, ExtractionRun.store_id == Store.id)
+            .where(*verified_conditions)
+        )
+    latest_observation_id = (
+        latest_prices
         .order_by(PriceObservation.observed_at.desc(), PriceObservation.id.desc())
         .limit(1)
         .scalar_subquery()
@@ -226,7 +341,7 @@ def list_products_with_latest_prices(
         if observation is not None and listing is not None and store is not None:
             latest_price = _latest_price_payload(product, observation, listing, store)
         items.append({**_product_payload(product), "latest_price": latest_price})
-    return {"items": items, "total": total, "limit": limit, "offset": offset}
+    return {"items": items, "total": total, "limit": limit, "offset": offset, "verified_only": verified_only}
 
 
 @router.get("/products/{product_id}", response_model=ProductOut, tags=["catalog"])
@@ -246,7 +361,8 @@ def list_store_products(store_id: int | None = None, db: Session = Depends(get_d
     return [_store_product_payload(listing, product) for listing, product in db.execute(query).all()]
 
 
-@router.post("/store-products", response_model=StoreProductOut, status_code=status.HTTP_201_CREATED, tags=["catalog"])
+@router.post("/store-products", response_model=StoreProductOut, status_code=status.HTTP_201_CREATED,
+             tags=["catalog"], dependencies=[Depends(require_admin_api_token)])
 def create_store_product(payload: StoreProductCreate, db: Session = Depends(get_db)):
     row = StoreProduct(**payload.model_dump(mode="json"))
     db.add(row)
@@ -260,7 +376,8 @@ def create_store_product(payload: StoreProductCreate, db: Session = Depends(get_
     return _store_product_payload(row, product)
 
 
-@router.post("/price-observations", response_model=PriceObservationOut, status_code=status.HTTP_201_CREATED, tags=["prices"])
+@router.post("/price-observations", response_model=PriceObservationOut, status_code=status.HTTP_201_CREATED,
+             tags=["prices"], dependencies=[Depends(require_admin_api_token)])
 def create_price_observation(payload: PriceObservationCreate, db: Session = Depends(get_db)):
     if payload.observed_at.tzinfo is None or payload.observed_at.utcoffset() is None:
         raise HTTPException(status_code=422, detail="observed_at debe incluir zona horaria")
@@ -278,6 +395,7 @@ def create_price_observation(payload: PriceObservationCreate, db: Session = Depe
 @router.get("/price-observations", response_model=list[PriceObservationOut], tags=["prices"])
 def list_price_observations(
     store_product_id: int | None = Query(default=None, gt=0),
+    product_id: int | None = Query(default=None, gt=0),
     store_id: int | None = Query(default=None, gt=0),
     category_id: int | None = Query(default=None, gt=0),
     start: datetime | None = None,
@@ -291,12 +409,14 @@ def list_price_observations(
     if store_product_id is not None:
         query = query.where(PriceObservation.store_product_id == store_product_id)
     pattern = _search_pattern(search)
-    joined_listing = store_id is not None or category_id is not None or pattern is not None
-    joined_product = category_id is not None or pattern is not None
+    joined_listing = store_id is not None or product_id is not None or category_id is not None or pattern is not None
+    joined_product = product_id is not None or category_id is not None or pattern is not None
     if joined_listing:
         query = query.join(StoreProduct, PriceObservation.store_product_id == StoreProduct.id)
     if store_id is not None:
         query = query.where(StoreProduct.store_id == store_id)
+    if product_id is not None:
+        query = query.where(Product.id == product_id)
     if joined_product:
         query = query.outerjoin(Product, StoreProduct.product_id == Product.id)
     if category_id is not None:
@@ -310,7 +430,9 @@ def list_price_observations(
     if not joined_product:
         query = query.outerjoin(Product, StoreProduct.product_id == Product.id)
     query = query.join(Store, Store.id == StoreProduct.store_id).where(
-        ~Store.name.like("DEMO PriceScope %"), or_(Product.id.is_(None), ~Product.name.like("DEMO PriceScope %"))
+        ~Store.name.like("DEMO PriceScope %"),
+        ~StoreProduct.product_name.like("DEMO PriceScope %"),
+        or_(Product.id.is_(None), ~Product.name.like("DEMO PriceScope %")),
     )
     if start is not None:
         query = query.where(PriceObservation.observed_at >= start)
@@ -332,28 +454,8 @@ def list_exchange_rates(
         if value is not None and (value.tzinfo is None or value.utcoffset() is None):
             raise HTTPException(status_code=422, detail=f"{field_name} debe incluir zona horaria")
     _validate_range(start, end)
-    # Refresh requested USD/ARS series from a real public source.
-    # If the provider is temporarily unavailable, keep the stored real history.
-    if rate_type in {"official", "parallel"}:
-        try:
-            last_capture = db.scalar(
-                select(func.max(ExchangeRate.created_at)).where(
-                    ExchangeRate.source == "MonedAPI",
-                    ExchangeRate.rate_type == rate_type,
-                )
-            )
-            if last_capture is None:
-                should_refresh = True
-            else:
-                if last_capture.tzinfo is None:
-                    last_capture = last_capture.replace(tzinfo=timezone.utc)
-                should_refresh = (datetime.now(timezone.utc) - last_capture).total_seconds() >= 300
-            if should_refresh:
-                persist_quotes(db, MonedApiProvider(rate_type).fetch())
-                db.commit()
-        except Exception:
-            db.rollback()
-
+    # Public reads are side-effect free. The hosted daily ingestion job stores
+    # source-backed quotes; this endpoint only returns persisted history.
     query = select(ExchangeRate).where(
         ExchangeRate.rate_type == rate_type,
         ~ExchangeRate.source.ilike("%demo%"),

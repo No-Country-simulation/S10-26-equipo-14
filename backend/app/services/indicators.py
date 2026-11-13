@@ -35,7 +35,11 @@ def compare_latest_prices(
         observation_filters.append(PriceObservation.observed_at <= end)
     latest_id = (
         select(PriceObservation.id)
-        .where(PriceObservation.store_product_id == StoreProduct.id, *observation_filters)
+        .where(
+            PriceObservation.store_product_id == StoreProduct.id,
+            PriceObservation.is_available.is_not(False),
+            *observation_filters,
+        )
         .order_by(PriceObservation.observed_at.desc(), PriceObservation.id.desc())
         .limit(1)
         .correlate(StoreProduct)
@@ -50,7 +54,9 @@ def compare_latest_prices(
         .where(~Product.name.like("DEMO PriceScope %"), ~Store.name.like("DEMO PriceScope %"))
     )
     if category_id is not None:
-        query = query.where(Product.category_id == category_id)
+        query = query.where(
+            (Product.category_id == category_id) | (StoreProduct.category_id == category_id)
+        )
     rows = session.execute(query.limit(limit * 20)).all()
     grouped: dict[int, dict[str, object]] = {}
     for product, listing, observation, store in rows:
@@ -124,6 +130,7 @@ def price_alerts(
     if category_id is not None:
         filters.append((Product.category_id == category_id) | (StoreProduct.category_id == category_id))
     filters.extend((~Product.name.like("DEMO PriceScope %"), ~Store.name.like("DEMO PriceScope %")))
+    filters.append(PriceObservation.is_available.is_not(False))
     rows = session.execute(
         select(PriceObservation, StoreProduct, Product, Store)
         .join(StoreProduct, StoreProduct.id == PriceObservation.store_product_id)

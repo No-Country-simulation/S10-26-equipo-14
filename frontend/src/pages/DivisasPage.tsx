@@ -14,13 +14,14 @@ function errorMessage(error: unknown): string {
   return "No se pudieron cargar las observaciones de PriceScope."
 }
 
-function groupByDate(items: { observed_at: string; value: number }[]) {
+function groupByTimestamp(items: { observed_at: string; value: number }[]) {
   const grouped = new Map<string, { total: number; count: number }>()
   for (const item of items) {
-    const day = item.observed_at.slice(0, 10)
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(item.value)) continue
-    const current = grouped.get(day) ?? { total: 0, count: 0 }
-    grouped.set(day, { total: current.total + item.value, count: current.count + 1 })
+    const timestamp = new Date(item.observed_at)
+    if (Number.isNaN(timestamp.getTime()) || !Number.isFinite(item.value)) continue
+    const key = timestamp.toISOString()
+    const current = grouped.get(key) ?? { total: 0, count: 0 }
+    grouped.set(key, { total: current.total + item.value, count: current.count + 1 })
   }
   return Array.from(grouped.entries()).sort(([left], [right]) => left.localeCompare(right)).map(([date, data]) => ({
     date,
@@ -64,11 +65,13 @@ export default function DivisasPage() {
   const [exchangeRates, setExchangeRates] = React.useState<ExchangeRate[]>([])
   const [loadingFilters, setLoadingFilters] = React.useState(true)
   const [loadingSeries, setLoadingSeries] = React.useState(true)
-  const [error, setError] = React.useState<string | null>(null)
+  const [filterErrors, setFilterErrors] = React.useState<string[]>([])
+  const [seriesErrors, setSeriesErrors] = React.useState<string[]>([])
   const [retry, setRetry] = React.useState(0)
 
   const retryRequests = () => {
-    setError(null)
+    setFilterErrors([])
+    setSeriesErrors([])
     setLoadingFilters(true)
     setLoadingSeries(true)
     setRetry((value) => value + 1)
@@ -82,20 +85,18 @@ export default function DivisasPage() {
   React.useEffect(() => {
     const controller = new AbortController()
     let active = true
-    void Promise.all([
+    void Promise.allSettled([
       apiClient.fetchStores(controller.signal),
       apiClient.fetchCategories(controller.signal),
     ])
-      .then(([loadedStores, loadedCategories]) => {
+      .then(([storesResult, categoriesResult]) => {
         if (!active) return
-        setStores(loadedStores)
-        setCategories(loadedCategories)
-        setError(null)
-      })
-      .catch((cause: unknown) => {
-        if (active && !(cause instanceof Error && cause.name === "AbortError")) {
-          setError(errorMessage(cause))
-        }
+        const errors: string[] = []
+        if (storesResult.status === "fulfilled") setStores(storesResult.value)
+        else { setStores([]); errors.push("Tiendas: " + errorMessage(storesResult.reason)) }
+        if (categoriesResult.status === "fulfilled") setCategories(categoriesResult.value)
+        else { setCategories([]); errors.push("Categorías: " + errorMessage(categoriesResult.reason)) }
+        setFilterErrors(errors)
       })
       .finally(() => {
         if (active) setLoadingFilters(false)
@@ -117,22 +118,21 @@ export default function DivisasPage() {
       search: filters.search.trim() || undefined,
       limit: PAGE_LIMIT,
     }
-    void Promise.all([
+    void Promise.allSettled([
       apiClient.fetchPriceObservations(query, controller.signal),
       apiClient.fetchExchangeRates({ rate_type: "official", start: query.start, end: query.end, limit: PAGE_LIMIT }, controller.signal),
       apiClient.fetchExchangeRates({ rate_type: "parallel", start: query.start, end: query.end, limit: PAGE_LIMIT }, controller.signal),
     ])
-      .then(([loadedObservations, loadedOfficialRates, loadedParallelRates]) => {
+      .then(([observationsResult, officialResult, parallelResult]) => {
         if (!active) return
-        setObservations(loadedObservations)
-        setExchangeRates([...loadedOfficialRates, ...loadedParallelRates])
-        setError(null)
-      })
-      .catch((cause: unknown) => {
-        if (!active || (cause instanceof Error && cause.name === "AbortError")) return
-        setObservations([])
-        setExchangeRates([])
-        setError(errorMessage(cause))
+        const errors: string[] = []
+        if (observationsResult.status === "fulfilled") setObservations(observationsResult.value)
+        else { setObservations([]); errors.push("Precios: " + errorMessage(observationsResult.reason)) }
+        if (officialResult.status === "fulfilled") setExchangeRates((current) => [...current.filter((row) => row.rate_type !== "official"), ...officialResult.value])
+        else { setExchangeRates((current) => current.filter((row) => row.rate_type !== "official")); errors.push("Cotización oficial: " + errorMessage(officialResult.reason)) }
+        if (parallelResult.status === "fulfilled") setExchangeRates((current) => [...current.filter((row) => row.rate_type !== "parallel"), ...parallelResult.value])
+        else { setExchangeRates((current) => current.filter((row) => row.rate_type !== "parallel")); errors.push("Cotización paralela: " + errorMessage(parallelResult.reason)) }
+        setSeriesErrors(errors)
       })
       .finally(() => {
         if (active) setLoadingSeries(false)
@@ -143,29 +143,31 @@ export default function DivisasPage() {
     }
   }, [filters.categoryId, filters.dateFrom, filters.dateTo, filters.search, filters.storeId, retry])
 
-  const arsObservations = observations.filter((item) => item.currency === "ARS")
+  const arsObservations = observations.filter((item) => item.currency === "ARS" && item.is_available === true)
   const arsUsdReferenceRates = exchangeRates.filter(
     (item) => item.base_currency === "USD" && item.quote_currency === "ARS" && item.rate_side === "reference",
   )
   const parallelUsdRates = exchangeRates.filter(
     (item) => item.base_currency === "USD" && item.quote_currency === "ARS" && item.rate_type === "parallel" && item.rate_side === "sell",
   )
-  const priceByDate = groupByDate(arsObservations.map((item) => ({
+  const priceByDate = groupByTimestamp(arsObservations.map((item) => ({
     observed_at: item.observed_at,
     value: Number(item.amount),
   })))
-  const rateByDate = groupByDate(arsUsdReferenceRates.map((item) => ({
+  const rateByDate = groupByTimestamp(arsUsdReferenceRates.map((item) => ({
     observed_at: item.observed_at,
     value: Number(item.rate),
   })))
-  const parallelByDate = groupByDate(parallelUsdRates.map((item) => ({
+  const parallelByDate = groupByTimestamp(parallelUsdRates.map((item) => ({
     observed_at: item.observed_at,
     value: Number(item.rate),
   })))
   const chartData = mergeSeries(priceByDate, rateByDate, parallelByDate)
   const hasSyntheticRates = arsUsdReferenceRates.some((item) => /demo|sint[eé]tic|synthetic/i.test(item.source))
   const seriesWithData = [priceByDate.length, rateByDate.length, parallelByDate.length].filter((days) => days > 0)
-  const hasInsufficientHistory = seriesWithData.some((days) => days < 2)
+  const hasInsufficientHistory = seriesWithData.some((points) => points < 2)
+  const latestOfficial = [...arsUsdReferenceRates].sort((left, right) => Date.parse(right.observed_at) - Date.parse(left.observed_at))[0]
+  const latestParallel = [...parallelUsdRates].sort((left, right) => Date.parse(right.observed_at) - Date.parse(left.observed_at))[0]
   const selectedStore = filters.storeId ? stores.find((store) => store.id === filters.storeId)?.name : null
   const selectedCategory = filters.categoryId
     ? categories.find((category) => category.id === filters.categoryId)?.name
@@ -183,20 +185,11 @@ export default function DivisasPage() {
         </div>
       </div>
 
-      {error && (
-        <div role="alert" className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between">
-          <span>{error}</span>
-          <button
-            type="button"
-            onClick={retryRequests}
-            className="rounded-lg border border-rose-300 px-3 py-1.5 font-semibold hover:bg-rose-100"
-          >
-            Reintentar
-          </button>
-        </div>
-      )}
+      {(filterErrors.length > 0 || seriesErrors.length > 0) && <div role="alert" className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between"><span>{[...filterErrors, ...seriesErrors].join(" · ")}</span><button type="button" onClick={retryRequests} className="rounded-lg border border-rose-300 px-3 py-1.5 font-semibold hover:bg-rose-100">Reintentar</button></div>}
 
-      {(observations.length >= PAGE_LIMIT || exchangeRates.length >= PAGE_LIMIT) && !loading && (
+      {(observations.length >= PAGE_LIMIT ||
+        exchangeRates.filter((item) => item.rate_type === "official").length >= PAGE_LIMIT ||
+        exchangeRates.filter((item) => item.rate_type === "parallel").length >= PAGE_LIMIT) && !loading && (
         <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           Se alcanzó el máximo de {PAGE_LIMIT.toLocaleString("es-AR")} registros por consulta. El gráfico puede omitir datos adicionales; reduce el rango de fechas o usa los filtros.
         </p>
@@ -213,7 +206,7 @@ export default function DivisasPage() {
         <CardHeader>
           <CardTitle className="text-sm font-semibold">Precio vs tipo de cambio</CardTitle>
           <CardDescription className="text-xs text-slate-500">
-            Precio promedio diario (ARS) · cotización de referencia promedio (ARS por USD)
+            Observaciones por timestamp (hora local) · precio ARS · oficial y paralelo ARS por USD
             {selectedStore && ` · Tienda: ${selectedStore}`}
             {selectedCategory && ` · Categoría: ${selectedCategory}`}
           </CardDescription>
@@ -236,13 +229,13 @@ export default function DivisasPage() {
             <>
               {hasInsufficientHistory && (
                 <p role="status" className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-                  Una o más series tienen datos de menos de dos días; sus puntos no muestran una evolución temporal.
+                  Una o más series tienen menos de dos observaciones con timestamp; no hay base suficiente para mostrar una variación temporal.
                 </p>
               )}
               <DualAxisTimeSeriesChart
                 data={chartData}
-                title="Evolución diaria de precios y tipo de cambio"
-                subtitle="Promedios diarios calculados a partir de los registros recibidos desde la API"
+                title="Evolución temporal de precios y cotizaciones"
+                subtitle="Puntos agrupados solo cuando comparten el mismo timestamp; sin interpolar registros"
               />
             </>
           )}
@@ -254,14 +247,16 @@ export default function DivisasPage() {
           <CardHeader><CardTitle className="text-sm">Observaciones de precio</CardTitle></CardHeader>
           <CardContent className="text-sm text-slate-600">
             <p>Registros ARS: {loading ? "…" : arsObservations.length}</p>
-            <p>Días con datos: {loading ? "…" : priceByDate.length}</p>
+            <p>Puntos temporales: {loading ? "…" : priceByDate.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle className="text-sm">Cotizaciones</CardTitle></CardHeader>
           <CardContent className="text-sm text-slate-600">
             <p>USD/ARS referencia: {loading ? "…" : arsUsdReferenceRates.length}</p>
-            <p>Días con datos: {loading ? "…" : rateByDate.length}</p>
+            <p>Puntos oficiales: {loading ? "…" : rateByDate.length}</p>
+            <p>Oficial USD/ARS actual: {loading ? "…" : latestOfficial ? latestOfficial.rate + " · " + latestOfficial.source + " · " + new Date(latestOfficial.observed_at).toLocaleString() : "Sin cotización disponible"}</p>
+            <p>Paralelo USD/ARS actual: {loading ? "…" : latestParallel ? latestParallel.rate + " · " + latestParallel.source + " · " + new Date(latestParallel.observed_at).toLocaleString() : "Sin cotización disponible"}</p>
           </CardContent>
         </Card>
         <Card>

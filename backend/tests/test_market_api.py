@@ -254,6 +254,69 @@ def test_products_with_latest_prices_keeps_products_without_observations(client)
     assert by_name["Producto sin observación"]["latest_price"] is None
 
 
+def test_verified_catalog_requires_recent_available_price_from_latest_fravega_success(client):
+    from datetime import timedelta
+    from sqlalchemy import select
+    from app.models import ExtractionRun, PriceObservation, Product, Store, StoreProduct
+
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    with _manual_db_session() as session:
+        store = Store(name="Frávega", base_url="https://www.fravega.com", is_active=True)
+        product = Product(name="Notebook verificada")
+        session.add_all([store, product])
+        session.flush()
+        listing = StoreProduct(store_id=store.id, product_id=product.id,
+                               product_url="https://www.fravega.com/p/notebook",
+                               product_name=product.name)
+        run = ExtractionRun(source="fravega", store_id=store.id, status="SUCCESS", started_at=now)
+        session.add_all([listing, run])
+        session.flush()
+        session.add(PriceObservation(store_product_id=listing.id, amount="100.00", currency="ARS",
+                                     is_available=True, source_url=listing.product_url, observed_at=now))
+        session.commit()
+        product_id = product.id
+
+    response = client.get("/api/v1/products/paginated-with-prices", params={"verified_only": "true"})
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["verified_only"] is True
+    assert response.json()["items"][0]["id"] == product_id
+    assert response.json()["items"][0]["latest_price"]["is_available"] is True
+
+    with _manual_db_session() as session:
+        store = session.scalar(select(Store).where(Store.name == "Frávega"))
+        session.add(ExtractionRun(source="fravega", store_id=store.id, status="FAILED", started_at=now + timedelta(seconds=1)))
+        session.commit()
+    assert client.get("/api/v1/products/paginated-with-prices", params={"verified_only": "true"}).json()["total"] == 0
+
+
+def test_verified_catalog_excludes_stale_and_unavailable_prices(client):
+    from datetime import timedelta
+    from app.models import ExtractionRun, PriceObservation, Product, Store, StoreProduct
+
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    with _manual_db_session() as session:
+        store = Store(name="Frávega", base_url="https://www.fravega.com", is_active=True)
+        stale = Product(name="Notebook antigua")
+        unavailable = Product(name="Monitor agotado")
+        session.add_all([store, stale, unavailable])
+        session.flush()
+        old_time = now - timedelta(hours=49)
+        for product, at, available in ((stale, old_time, True), (unavailable, now, False)):
+            listing = StoreProduct(store_id=store.id, product_id=product.id,
+                                   product_url=f"https://www.fravega.com/p/{product.id}", product_name=product.name)
+            session.add(listing)
+            session.flush()
+            session.add(ExtractionRun(source="fravega", store_id=store.id, status="SUCCESS", started_at=at))
+            session.add(PriceObservation(store_product_id=listing.id, amount="100.00", currency="ARS",
+                                         is_available=available, observed_at=at))
+        session.commit()
+
+    response = client.get("/api/v1/products/paginated-with-prices", params={"verified_only": "true"})
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
+
+
 def test_product_by_id_returns_product_and_404_for_missing(client):
     from app.models import Product
 
@@ -299,10 +362,9 @@ def test_price_observation_preserves_history_and_rejects_duplicate(client):
     assert history.json()[0]["amount"] == "110.00"
 
 
-def test_exchange_rates_can_be_filtered_by_type_and_date(client, monkeypatch):
+def test_exchange_rates_can_be_filtered_by_type_and_date(client):
     from app.models import ExchangeRate
 
-    monkeypatch.setattr("app.api.v1.router.MonedApiProvider.fetch", lambda _self: ())
     with _manual_db_session() as session:
         session.add_all([
             ExchangeRate(source="BCRA", rate_type="official", rate="1000.000000", observed_at=datetime(2026, 1, 1, tzinfo=timezone.utc)),
@@ -412,14 +474,15 @@ def test_catalog_does_not_normalize_unknown_product_units(client):
 
 
 
-def test_exchange_rate_refresh_is_throttled_after_recent_real_capture(client, monkeypatch):
+def test_exchange_rate_listing_does_not_fetch_or_persist_quotes(client, monkeypatch):
+    from sqlalchemy import select
     from app.models import ExchangeRate
 
-    calls = []
-    monkeypatch.setattr(
-        "app.api.v1.router.MonedApiProvider.fetch",
-        lambda provider: calls.append(provider.rate_type) or (),
-    )
+    def fail_if_fetching(_self):
+        raise AssertionError("public GET must not fetch or persist exchange rates")
+
+    monkeypatch.setattr("app.services.exchange_rate_providers.BcraOfficialProvider.fetch", fail_if_fetching)
+    monkeypatch.setattr("app.services.exchange_rate_providers.DolarApiBlueProvider.fetch", fail_if_fetching)
     with _manual_db_session() as session:
         session.add(ExchangeRate(
             source="MonedAPI",
@@ -434,6 +497,5 @@ def test_exchange_rate_refresh_is_throttled_after_recent_real_capture(client, mo
 
     response = client.get("/api/v1/exchange-rates?rate_type=official&limit=10")
     assert response.status_code == 200
-    assert calls == []
-
-
+    with _manual_db_session() as session:
+        assert len(session.scalars(select(ExchangeRate)).all()) == 1

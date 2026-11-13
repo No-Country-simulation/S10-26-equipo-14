@@ -2,6 +2,7 @@ import type { Category, Product } from "@/types"
 import type { CreateStoreInput, ManagedStore, StoreMonitoringInput } from "@/types/store"
 import type { Store, PriceObservation, ExchangeRate } from "@/types"
 import type { ExtractionRun, PricedProduct, PricedProductPage } from "@/types"
+import type { StoreProduct } from "@/types/storeProduct"
 
 /** Backend configurable; Vite proxy local en desarrollo y API desplegada en producción. */
 const configuredBase = import.meta.env.VITE_API_URL?.trim()
@@ -22,6 +23,15 @@ export class ApiError extends Error {
     this.name = "ApiError"
     this.status = status
   }
+}
+
+export interface CreateStoreProductInput {
+  product_url: string
+  product_name: string
+  currency: string
+  external_id?: string | null
+  product_id?: number | null
+  category_id?: number | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -96,28 +106,7 @@ function isCategory(value: unknown): value is Category {
   )
 }
 
-const ADMIN_TOKEN_STORAGE_KEY = "pricescope.adminToken"
-let adminApiToken: string | null = null
-
-export function setAdminApiToken(token: string | null) {
-  adminApiToken = token?.trim() || null
-  if (typeof window !== "undefined") {
-    if (adminApiToken) window.sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, adminApiToken)
-    else window.sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY)
-  }
-}
-
-export function getAdminApiToken(): string | null {
-  if (adminApiToken) return adminApiToken
-  if (typeof window === "undefined") return null
-  return window.sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)
-}
-
-export function hasAdminApiToken(): boolean {
-  return Boolean(getAdminApiToken())
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, adminToken?: string): Promise<T> {
   let response: Response
   try {
     response = await fetch(`${API_BASE}${path}`, {
@@ -125,9 +114,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       headers: {
         "Content-Type": "application/json",
         ...(init?.headers ?? {}),
-        ...((init?.method && !["GET", "HEAD", "OPTIONS"].includes(init.method.toUpperCase()) && getAdminApiToken())
-          ? { "X-Admin-Token": getAdminApiToken() as string }
-          : {}),
+        ...(adminToken ? { "X-Admin-API-Token": adminToken } : {}),
       },
     })
   } catch (error) {
@@ -239,7 +226,13 @@ export interface ShrinkflationSignal {
 }
 
 export interface ApiClient {
-  fetchStores: (signal?: AbortSignal) => Promise<Store[]>
+  fetchStores: (signal?: AbortSignal, filters?: {
+    with_observations?: boolean
+    eligible_for?: "comparisons" | "alerts"
+    category_id?: number
+    start?: string
+    end?: string
+  }) => Promise<Store[]>
   fetchProducts: (
     params?: {
       category_id?: number | null
@@ -257,12 +250,14 @@ export interface ApiClient {
       end?: string
       limit?: number
       offset?: number
+      verified_only?: boolean
     },
     signal?: AbortSignal,
   ) => Promise<PricedProductPage>
   fetchCategories: (signal?: AbortSignal) => Promise<Category[]>
   fetchPriceObservations: (params?: {
     store_product_id?: number
+    product_id?: number
     store_id?: number
     category_id?: number
     start?: string
@@ -282,11 +277,14 @@ export interface ApiClient {
   fetchShrinkflation: (params?: { category_id?: number; store_id?: number; product_id?: number; start?: string; end?: string; limit?: number }, signal?: AbortSignal) => Promise<ShrinkflationSignal[]>
   fetchManagedStores: (signal?: AbortSignal) => Promise<ManagedStore[]>
   verifyAdminToken: (token: string) => Promise<boolean>
-  createStore: (input: CreateStoreInput) => Promise<ManagedStore>
-  analyzeStore: (storeId: number) => Promise<ManagedStore>
-  saveStoreMonitoring: (storeId: number, input: StoreMonitoringInput) => Promise<ManagedStore>
-  extractStore: (storeId: number) => Promise<ExtractionRun>
-  fetchStoreExtractions: (storeId: number, limit?: number, signal?: AbortSignal) => Promise<ExtractionRun[]>
+  createStore: (input: CreateStoreInput, adminToken?: string) => Promise<ManagedStore>
+  analyzeStore: (storeId: number, adminToken?: string) => Promise<ManagedStore>
+  saveStoreMonitoring: (storeId: number, input: StoreMonitoringInput, adminToken?: string) => Promise<ManagedStore>
+  extractStore: (storeId: number, adminToken?: string) => Promise<ExtractionRun>
+  fetchStoreExtractions: (storeId: number, limit?: number, signal?: AbortSignal, adminToken?: string) => Promise<ExtractionRun[]>
+  fetchRunObservations: (storeId: number, runId: number, limit?: number, signal?: AbortSignal, adminToken?: string) => Promise<PriceObservation[]>
+  fetchStoreProducts: (storeId?: number, signal?: AbortSignal) => Promise<StoreProduct[]>
+  createStoreProduct: (storeId: number, input: CreateStoreProductInput, adminToken?: string) => Promise<StoreProduct>
 }
 
 const integrationStatuses = new Set([
@@ -297,7 +295,10 @@ function isNullableNumber(value: unknown): value is number | null {
   return value === null || (typeof value === "number" && Number.isInteger(value))
 }
 
-function isManagedStore(value: unknown): value is ManagedStore {
+type ManagedStoreResponse = Omit<ManagedStore, "connector_available" | "connector_name" | "connector_configured" | "is_operational" | "coverage_status" | "operational_at" | "extraction_disabled_reason"> &
+  Partial<Pick<ManagedStore, "connector_available" | "connector_name" | "connector_configured" | "is_operational" | "coverage_status" | "operational_at" | "extraction_disabled_reason">>
+
+function isManagedStore(value: unknown): value is ManagedStoreResponse {
   return (
     isRecord(value) &&
     Number.isInteger(value.id) &&
@@ -324,7 +325,14 @@ function isManagedStore(value: unknown): value is ManagedStore {
     Array.isArray(value.category_ids) &&
     value.category_ids.every((categoryId) => Number.isInteger(categoryId)) &&
     (value.last_extraction_at === null || typeof value.last_extraction_at === "string") &&
-    (value.last_extraction_status === null || typeof value.last_extraction_status === "string")
+    (value.last_extraction_status === null || typeof value.last_extraction_status === "string") &&
+    (value.connector_available === undefined || typeof value.connector_available === "boolean") &&
+    (value.connector_name === undefined || isNullableString(value.connector_name)) &&
+    (value.connector_configured === undefined || typeof value.connector_configured === "boolean") &&
+    (value.is_operational === undefined || typeof value.is_operational === "boolean") &&
+    (value.coverage_status === undefined || typeof value.coverage_status === "string") &&
+    (value.operational_at === undefined || value.operational_at === null || typeof value.operational_at === "string") &&
+    (value.extraction_disabled_reason === undefined || isNullableString(value.extraction_disabled_reason))
   )
 }
 
@@ -332,7 +340,17 @@ function requireManagedStore(value: unknown): ManagedStore {
   if (!isManagedStore(value)) {
     throw new ApiError("PriceScope API devolvió una respuesta de gestión de tiendas inesperada.")
   }
-  return value
+  const coverageStatuses = new Set(["inactive", "no_connector", "connector_unverified", "no_listings", "pending", "running", "partial", "failed", "no_data", "operational"])
+  return {
+    ...value,
+    connector_available: value.connector_available ?? false,
+    connector_name: value.connector_name ?? null,
+    connector_configured: value.connector_configured ?? false,
+    is_operational: value.is_operational ?? false,
+    coverage_status: coverageStatuses.has(value.coverage_status ?? "") ? value.coverage_status! : "connector_unverified",
+    operational_at: value.operational_at ?? null,
+    extraction_disabled_reason: value.extraction_disabled_reason ?? "La API no publica datos de cobertura verificables; esta tienda no se considera operativa.",
+  }
 }
 
 function isStore(value: unknown): value is Store {
@@ -341,6 +359,14 @@ function isStore(value: unknown): value is Store {
     typeof value.base_url === "string" && isNullableString(value.country) &&
     typeof value.is_active === "boolean" && typeof value.created_at === "string"
   )
+}
+
+function isStoreProduct(value: unknown): value is StoreProduct {
+  return isRecord(value) && Number.isInteger(value.id) && Number.isInteger(value.store_id) &&
+    (value.product_id === null || Number.isInteger(value.product_id)) &&
+    (value.category_id === null || Number.isInteger(value.category_id)) &&
+    isNullableString(value.external_id) && typeof value.product_url === "string" &&
+    typeof value.product_name === "string" && typeof value.currency === "string"
 }
 
 function isDecimal(value: unknown): value is string {
@@ -380,8 +406,15 @@ function queryString(params: object): string {
 
 /** Cliente de API para el catálogo canónico. */
 export const apiClient: ApiClient = {
-  fetchStores: async (signal) => {
-    const result: unknown = await request<unknown>("/api/v1/stores", { signal })
+  fetchStores: async (signal, filters) => {
+    const params = new URLSearchParams()
+    if (filters?.with_observations) params.set("with_observations", "true")
+    if (filters?.eligible_for) params.set("eligible_for", filters.eligible_for)
+    if (filters?.category_id != null) params.set("category_id", String(filters.category_id))
+    if (filters?.start) params.set("start", filters.start)
+    if (filters?.end) params.set("end", filters.end)
+    const query = params.toString()
+    const result: unknown = await request<unknown>(`/api/v1/stores${query ? `?${query}` : ""}`, { signal })
     if (!Array.isArray(result) || !result.every(isStore)) {
       throw new ApiError("PriceScope API devolvió un listado de tiendas inesperado.")
     }
@@ -423,12 +456,16 @@ export const apiClient: ApiClient = {
     if (params?.end) searchParams.set("end", params.end)
     if (params?.limit != null) searchParams.set("limit", String(params.limit))
     if (params?.offset != null) searchParams.set("offset", String(params.offset))
+    if (params?.verified_only) searchParams.set("verified_only", "true")
     const result: unknown = await request<unknown>(
       `/api/v1/products/paginated-with-prices?${searchParams.toString()}`, { signal },
     )
     if (!isRecord(result) || !Array.isArray(result.items) || !result.items.every(isPricedProduct) ||
         !Number.isInteger(result.total) || !Number.isInteger(result.limit) || !Number.isInteger(result.offset)) {
       throw new ApiError("PriceScope API devolvió un listado de productos con precios inesperado.")
+    }
+    if (params?.verified_only && (!isRecord(result) || result.verified_only !== true)) {
+      throw new ApiError("The deployed API does not confirm verified catalog filtering.")
     }
     return result as unknown as PricedProductPage
   },
@@ -508,9 +545,7 @@ export const apiClient: ApiClient = {
   },
 
   verifyAdminToken: async (token) => {
-    const result: unknown = await request<unknown>("/api/v1/management/access", {
-      headers: { "X-Admin-Token": token },
-    })
+    const result: unknown = await request<unknown>("/api/v1/management/access", undefined, token)
     return isRecord(result) && result.can_manage === true
   },
 
@@ -519,38 +554,66 @@ export const apiClient: ApiClient = {
     if (!Array.isArray(result) || !result.every(isManagedStore)) {
       throw new ApiError("PriceScope API devolvió un listado de tiendas inesperado.")
     }
-    return result
+    return result.map(requireManagedStore)
   },
 
-  createStore: async (input) => requireManagedStore(await request<unknown>("/api/v1/management/stores", {
+  createStore: async (input, adminToken) => requireManagedStore(await request<unknown>("/api/v1/management/stores", {
     method: "POST",
     body: JSON.stringify(input),
-  })),
+  }, adminToken)),
 
-  analyzeStore: async (storeId) => requireManagedStore(await request<unknown>(
-    `/api/v1/management/stores/${storeId}/analyze`, { method: "POST" },
+  analyzeStore: async (storeId, adminToken) => requireManagedStore(await request<unknown>(
+    `/api/v1/management/stores/${storeId}/analyze`, { method: "POST" }, adminToken,
   )),
 
-  saveStoreMonitoring: async (storeId, input) => requireManagedStore(await request<unknown>(
+  saveStoreMonitoring: async (storeId, input, adminToken) => requireManagedStore(await request<unknown>(
     `/api/v1/management/stores/${storeId}/monitoring`, {
       method: "PUT",
       body: JSON.stringify(input),
-    },
+    }, adminToken,
   )),
 
-  extractStore: async (storeId) => {
-    const result: unknown = await request<unknown>(`/api/v1/management/stores/${storeId}/extract`, { method: "POST" })
+  extractStore: async (storeId, adminToken) => {
+    const result: unknown = await request<unknown>(`/api/v1/management/stores/${storeId}/extract`, { method: "POST" }, adminToken)
     if (!isExtractionRun(result)) throw new ApiError("PriceScope API devolvió un resultado de extracción inesperado.")
     return result
   },
 
-  fetchStoreExtractions: async (storeId, limit = 10, signal) => {
+  fetchStoreExtractions: async (storeId, limit = 10, signal, adminToken) => {
     const result: unknown = await request<unknown>(
-      `/api/v1/management/stores/${storeId}/extractions?limit=${limit}`, { signal },
+      `/api/v1/management/stores/${storeId}/extractions?limit=${limit}`, { signal }, adminToken,
     )
     if (!Array.isArray(result) || !result.every(isExtractionRun)) {
       throw new ApiError("PriceScope API devolvió un historial de extracciones inesperado.")
     }
+    return result
+  },
+
+  fetchRunObservations: async (storeId, runId, limit = 100, signal) => {
+    const result: unknown = await request<unknown>(
+      `/api/v1/management/stores/${storeId}/extractions/${runId}/observations?limit=${limit}`, { signal },
+    )
+    if (!Array.isArray(result) || !result.every(isPriceObservation)) {
+      throw new ApiError("PriceScope API devolvió observaciones de ejecución inesperadas.")
+    }
+    return result
+  },
+
+  fetchStoreProducts: async (storeId, signal) => {
+    const path = storeId == null ? "/api/v1/store-products" : `/api/v1/management/stores/${storeId}/store-products`
+    const result: unknown = await request<unknown>(path, { signal })
+    if (!Array.isArray(result) || !result.every(isStoreProduct)) {
+      throw new ApiError("PriceScope API devolvió publicaciones inesperadas.")
+    }
+    return result
+  },
+
+  createStoreProduct: async (storeId, input, adminToken) => {
+    const result: unknown = await request<unknown>(`/api/v1/management/stores/${storeId}/store-products`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, adminToken)
+    if (!isStoreProduct(result)) throw new ApiError("PriceScope API devolvió una publicación inesperada.")
     return result
   },
 }

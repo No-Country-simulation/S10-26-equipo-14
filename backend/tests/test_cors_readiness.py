@@ -17,7 +17,7 @@ def test_cors_origins_default_include_local_and_deployed_frontends(monkeypatch):
     assert "https://pricescope-14.vercel.app" in settings.cors_origins
 
 
-def test_runtime_defaults_are_production_and_management_is_public(monkeypatch):
+def test_runtime_defaults_are_production_and_management_access_is_public(monkeypatch):
     monkeypatch.delenv("APP_ENV", raising=False)
 
     settings = Settings(_env_file=None, database_url="sqlite://")
@@ -25,7 +25,7 @@ def test_runtime_defaults_are_production_and_management_is_public(monkeypatch):
 
     assert settings.app_env == "production"
     assert response.status_code == 200
-    assert response.json() == {"can_manage": True}
+    assert response.json() == {"can_manage": False}
 
 
 def test_runtime_environment_rejects_unknown_values():
@@ -147,7 +147,7 @@ def test_cors_rejects_unauthorized_origins():
     assert "access-control-allow-origin" not in response.headers
 
 
-def test_public_management_access_does_not_require_an_admin_token():
+def test_public_management_access_verification_does_not_require_a_token():
     settings = Settings(
         _env_file=None,
         database_url="sqlite://",
@@ -162,7 +162,7 @@ def test_public_management_access_does_not_require_an_admin_token():
     )
 
     assert response.status_code == 200
-    assert response.json() == {"can_manage": True}
+    assert response.json() == {"can_manage": False}
     assert response.headers["access-control-allow-origin"] == "https://pricescope.example.com"
 
 

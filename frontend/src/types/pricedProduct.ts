@@ -27,4 +27,5 @@ export interface PricedProductPage {
   total: number
   limit: number
   offset: number
+  verified_only?: boolean
 }
