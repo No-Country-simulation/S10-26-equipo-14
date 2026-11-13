@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Activity, AlertCircle, Check, ChevronRight, CircleHelp, Globe2, History, LoaderCircle, Plus, Play, RefreshCw, Store as StoreIcon } from 'lucide-react'
 import { apiClient, ApiError, type CreateStoreProductInput } from '@/lib/api'
-import { canExtractStore, coverageLabel, hasRecentVerifiedCoverage } from '@/lib/storeCoverage.js'
+import MetricCard from '@/components/metrics/MetricCard'
+import { canExtractStore, coverageLabel } from '@/lib/storeCoverage.js'
+import { summarizeStoreCoverage, type StoreHistoryRow } from '@/lib/marketRecords.js'
 import type { Category } from '@/types/category'
 import type { CreateStoreInput, ManagedStore, StoreCategoryCandidate, StoreMonitoringInput } from '@/types/store'
 import type { ExtractionRun, PriceObservation } from '@/types'
@@ -27,6 +29,20 @@ function formatDate(value: string | null) {
   if (!value) return 'Todavía no se registró una extracción.'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? 'Fecha no disponible' : date.toLocaleString()
+}
+
+function formatObservedPrice(observation: PriceObservation) {
+  const amount = Number(observation.amount)
+  const promotion = observation.promotional_price === null ? null : Number(observation.promotional_price)
+  const effective = promotion !== null && promotion > 0 && promotion <= amount ? promotion : amount
+  return `${observation.currency} ${effective.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`
+}
+
+function observationAgeLabel(value: string) {
+  const age = Date.now() - Date.parse(value)
+  return Number.isFinite(age) && age >= 0 && age <= 48 * 60 * 60 * 1000
+    ? 'Últimas 48 h'
+    : 'Dato histórico'
 }
 
 function runState(run: ExtractionRun) {
@@ -107,9 +123,12 @@ function StoreRegistrationForm({ onCreated, onCancel, adminToken }: {
   )
 }
 
-function StoreCard({ store, categories, onUpdated, onReload, canManage, adminToken }: {
+function StoreCard({ store, categories, priceHistory, priceHistoryLoading, priceHistoryError, onUpdated, onReload, canManage, adminToken }: {
   store: ManagedStore
   categories: Category[]
+  priceHistory: StoreHistoryRow[]
+  priceHistoryLoading: boolean
+  priceHistoryError: string | null
   onUpdated: (store: ManagedStore) => void
   onReload: () => void
   canManage: boolean
@@ -271,6 +290,37 @@ function StoreCard({ store, categories, onUpdated, onReload, canManage, adminTok
         <p className="text-slate-600"><span className="font-medium text-slate-800">Último análisis:</span> {formatDate(store.last_analysis_at)}</p>
       </div>
 
+      <section className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4" aria-label={`Historial de precios de ${store.name}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-slate-900">Precios guardados</h3>
+          {!priceHistoryLoading && !priceHistoryError && <span className="text-xs text-slate-500">{priceHistory.length} observaciones reales</span>}
+        </div>
+        {priceHistoryLoading ? <p role="status" className="mt-2 text-sm text-slate-500">Cargando observaciones…</p>
+          : priceHistoryError ? <p role="alert" className="mt-2 text-sm text-rose-800">No se pudo cargar el historial: {priceHistoryError}</p>
+            : priceHistory.length === 0 ? <p className="mt-2 text-sm text-slate-600">No hay precios verificables guardados para esta tienda.</p>
+              : <>
+                <ul className="mt-2 divide-y divide-slate-200">
+                  {priceHistory.slice(0, 4).map(({ observation, listing }) => <li key={observation.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2 text-sm">
+                    <span className="min-w-0 flex-1 truncate text-slate-700">{listing.product_name}</span>
+                    <strong className="tabular-nums text-slate-900">{formatObservedPrice(observation)}</strong>
+                    <time className="text-xs text-slate-500" dateTime={observation.observed_at}>{formatDate(observation.observed_at)} · {observationAgeLabel(observation.observed_at)}</time>
+                    {observation.source_url && <a className="text-xs font-semibold text-indigo-700 underline" href={observation.source_url} target="_blank" rel="noreferrer">Fuente</a>}
+                  </li>)}
+                </ul>
+                {priceHistory.length > 4 && <details className="mt-2 text-sm">
+                  <summary className="cursor-pointer font-semibold text-indigo-700">Ver las {priceHistory.length} observaciones</summary>
+                  <ul className="mt-2 divide-y divide-slate-200">
+                    {priceHistory.slice(4).map(({ observation, listing }) => <li key={observation.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2 text-sm">
+                      <span className="min-w-0 flex-1 truncate text-slate-700">{listing.product_name}</span>
+                      <strong className="tabular-nums text-slate-900">{formatObservedPrice(observation)}</strong>
+                      <time className="text-xs text-slate-500" dateTime={observation.observed_at}>{formatDate(observation.observed_at)} · {observationAgeLabel(observation.observed_at)}</time>
+                      {observation.source_url && <a className="text-xs font-semibold text-indigo-700 underline" href={observation.source_url} target="_blank" rel="noreferrer">Fuente</a>}
+                    </li>)}
+                  </ul>
+                </details>}
+              </>}
+      </section>
+
       {(extracting || extractResult) && (
         <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-sm text-indigo-950" role="status">
           {extracting ? (
@@ -412,14 +462,34 @@ export default function TiendasPage() {
   const [adminAuthError, setAdminAuthError] = useState<string | null>(null)
   const canManage = import.meta.env.DEV || adminAuthenticated
   const [stores, setStores] = useState<ManagedStore[]>([])
+  const [listings, setListings] = useState<StoreProduct[]>([])
+  const [observations, setObservations] = useState<PriceObservation[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [storesLoading, setStoresLoading] = useState(true)
   const [categoriesLoading, setCategoriesLoading] = useState(true)
+  const [marketHistoryLoading, setMarketHistoryLoading] = useState(true)
   const [storesError, setStoresError] = useState<string | null>(null)
   const [categoriesError, setCategoriesError] = useState<string | null>(null)
+  const [marketHistoryError, setMarketHistoryError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [retry, setRetry] = useState(0)
-  const visibleStores = canManage ? stores : stores.filter(hasRecentVerifiedCoverage)
+
+  const loadMarketHistory = useCallback(async (signal?: AbortSignal) => {
+    setMarketHistoryLoading(true)
+    setMarketHistoryError(null)
+    const [listingsResult, observationsResult] = await Promise.allSettled([
+      apiClient.fetchStoreProducts(undefined, signal),
+      apiClient.fetchPriceObservations({ limit: 1000 }, signal),
+    ])
+    if (signal?.aborted) return
+    if (listingsResult.status === 'fulfilled') setListings(listingsResult.value)
+    if (observationsResult.status === 'fulfilled') setObservations(observationsResult.value)
+    const failures = [listingsResult, observationsResult]
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => errorText(result.reason))
+    setMarketHistoryError(failures.length ? failures.join(' · ') : null)
+    setMarketHistoryLoading(false)
+  }, [])
 
   const load = useCallback(async (signal: AbortSignal) => {
     setStoresLoading(true)
@@ -438,8 +508,9 @@ export default function TiendasPage() {
         if (!signal.aborted && !(cause instanceof Error && cause.name === 'AbortError')) setCategoriesError(errorText(cause))
       })
       .finally(() => { if (!signal.aborted) setCategoriesLoading(false) })
-    await Promise.all([storeRequest, categoryRequest])
-  }, [])
+    const historyRequest = loadMarketHistory(signal)
+    await Promise.all([storeRequest, categoryRequest, historyRequest])
+  }, [loadMarketHistory])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -467,7 +538,11 @@ export default function TiendasPage() {
     } finally {
       setStoresLoading(false)
     }
+    void loadMarketHistory()
   }
+
+  const coverage = summarizeStoreCoverage(stores, listings, observations)
+  const visibleStores = coverage.realStores
 
   const connectAdmin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -503,9 +578,9 @@ export default function TiendasPage() {
     <section className="space-y-6">
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-indigo-700">Administración</p>
-          <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Tiendas</h1>
-          <p className="mt-2 max-w-2xl text-slate-600">Registra un comercio, revisa lo que PriceScope puede detectar y decide qué categorías preparar para el monitoreo.</p>
+          <p className="text-sm font-semibold uppercase tracking-wide text-cyan-700">Consulta pública</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Tiendas y cobertura</h1>
+          <p className="mt-2 max-w-2xl text-slate-600">Consulta comercios registrados, conectores y precios observados. Los datos históricos permanecen visibles con su fecha; las tiendas de demostración se identifican aparte.</p>
         </div>
           <button type="button" disabled={!canManage} title={!canManage ? 'Introduce la clave de administración para habilitar esta acción.' : undefined} onClick={() => setShowForm((visible) => !visible)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
           <Plus className="h-4 w-4" />Agregar tienda
@@ -513,7 +588,9 @@ export default function TiendasPage() {
       </header>
 
       {!import.meta.env.DEV && (
-        <section className="rounded-xl border border-indigo-200 bg-white p-4 shadow-sm">
+        <details className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" open={canManage}>
+          <summary className="cursor-pointer text-sm font-semibold text-slate-800">Administración protegida · solo para escrituras y acciones</summary>
+          <div className="mt-3 border-t border-slate-100 pt-3">
           {canManage ? (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm font-medium text-emerald-800">Acceso administrativo habilitado para esta sesión.</p>
@@ -528,16 +605,20 @@ export default function TiendasPage() {
             </form>
           )}
           {adminAuthError && <p role="alert" className="mt-3 text-sm text-rose-700">{adminAuthError}</p>}
-        </section>
+            <p className="mt-3 text-xs text-slate-500">Las consultas de tiendas, productos, precios e historial no necesitan clave. La clave solo se envía al ejecutar una operación protegida y se conserva en memoria mientras esta página está abierta.</p>
+          </div>
+        </details>
       )}
 
-      <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-        <CircleHelp className="mt-0.5 h-4 w-4 shrink-0" />
-        <p id="store-management-availability">
-          {canManage
-            ? 'Administración autenticada en el servidor. Las acciones envían el token en la solicitud y solo se conserva en memoria mientras esta página está abierta.'
-            : 'Modo de consulta: las tiendas y categorías siguen disponibles sin clave. Introduce la clave administrativa solo para habilitar altas, análisis y configuración.'}
-        </p>
+      <p id="store-management-availability" className="rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-950">La información pública se carga sin clave. La administración solo habilita altas, cambios de configuración y ejecuciones protegidas.</p>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <MetricCard title="Tiendas registradas" value={storesLoading ? '…' : coverage.registeredStoreCount} subtitle={storesLoading ? 'Consultando API pública' : `${coverage.realStores.length} comercios reales · ${coverage.demoStoreCount} registros de demo`} />
+        <MetricCard title="Conectores implementados" value={storesLoading ? '…' : coverage.implementedConnectorCount} subtitle={storesLoading ? 'Consultando conectores' : `${coverage.configuredConnectorCount} configurados con publicaciones verificables`} />
+        <MetricCard title="Tiendas con última extracción exitosa" value={storesLoading ? '…' : coverage.successfulExtractionStoreCount} subtitle="Éxito de extracción; no equivale a un conector específico verificado" />
+        <MetricCard title="Tiendas con precios recientes" value={marketHistoryLoading ? '…' : marketHistoryError ? 'Error API' : coverage.storesWithRecentPrices} subtitle="Con observaciones disponibles en las últimas 48 horas" />
+        <MetricCard title="Productos con precio real" value={marketHistoryLoading ? '…' : marketHistoryError ? 'Error API' : coverage.realPricedProductCount} subtitle={marketHistoryLoading ? 'Consultando historial' : `${coverage.realListings.length} publicaciones reales vinculadas a observaciones`} />
+        <MetricCard title="Observaciones de precio reales" value={marketHistoryLoading ? '…' : marketHistoryError ? 'Error API' : coverage.realObservations.length} subtitle={marketHistoryLoading ? 'Consultando historial' : `${coverage.historicalObservationCount} con más de 48 h · ${coverage.totalObservationRows} filas públicas recibidas; demos y no disponibles excluidas`} />
       </div>
 
       {showForm && <StoreRegistrationForm adminToken={adminToken} onCreated={handleCreated} onCancel={() => setShowForm(false)} />}
@@ -562,12 +643,12 @@ export default function TiendasPage() {
       ) : storesError && stores.length === 0 ? null : visibleStores.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
           <StoreIcon className="mx-auto h-10 w-10 text-slate-400" />
-          <h2 className="mt-4 text-lg font-semibold text-slate-900">{canManage ? 'Todavía no hay tiendas registradas' : 'No hay tiendas operativas con precios recientes'}</h2>
-          <p className="mx-auto mt-2 max-w-lg text-sm text-slate-600">{canManage ? 'Agrega el sitio oficial de un comercio. PriceScope comprobará primero si cuenta con un analizador compatible.' : 'Se muestran solo tiendas activas con conector específico, última extracción exitosa y precios persistidos en las últimas 48 horas.'}</p>
+          <h2 className="mt-4 text-lg font-semibold text-slate-900">No hay comercios reales registrados para mostrar</h2>
+          <p className="mx-auto mt-2 max-w-lg text-sm text-slate-600">{coverage.demoStoreCount ? `La API contiene ${coverage.demoStoreCount} registros de demostración; se mantienen separados del listado de comercios reales.` : 'Al registrar un comercio se comprobará si hay un conector compatible.'}</p>
           <button type="button" disabled={!canManage} title={!canManage ? 'Introduce la clave de administración para habilitar esta acción.' : undefined} onClick={() => setShowForm(true)} className="mt-5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">Registrar la primera tienda</button>
         </div>
       ) : (
-        <div className="space-y-4">{visibleStores.map((store) => <StoreCard key={store.id} store={store} categories={categories} canManage={canManage} adminToken={adminToken} onUpdated={updateStore} onReload={() => { void refreshStores() }} />)}</div>
+        <div className="space-y-4">{visibleStores.map((store) => <StoreCard key={store.id} store={store} categories={categories} priceHistory={coverage.storePriceHistory.get(store.id) ?? []} priceHistoryLoading={marketHistoryLoading} priceHistoryError={marketHistoryError} canManage={canManage} adminToken={adminToken} onUpdated={updateStore} onReload={() => { void refreshStores() }} />)}</div>
       )}
     </section>
   )
