@@ -24,6 +24,15 @@ from app.api.v1.stores import router as store_management_router
 router.include_router(store_management_router)
 
 
+@router.post("/management/ingestion/daily", tags=["management"],
+             dependencies=[Depends(require_admin_api_token)])
+def run_daily_market_ingestion():
+    """Run the idempotent daily store and exchange-rate ingestion pipeline."""
+    from app.commands.daily_ingestion import run_daily_ingestion
+
+    return run_daily_ingestion()
+
+
 def _validate_range(start: datetime | None, end: datetime | None) -> None:
     for field_name, value in (("start", start), ("end", end)):
         if value is not None and (value.tzinfo is None or value.utcoffset() is None):

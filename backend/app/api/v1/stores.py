@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import json
 from threading import Lock
 from urllib.parse import urlsplit
 
@@ -66,6 +67,16 @@ def _run_output(db: Session, run: ExtractionRun, store: Store,
             .where(StoreProduct.store_id == store.id,
                    PriceObservation.observed_at == run.started_at)
         ) or 0
+    products_created = 0
+    prices_changed = 0
+    for line in (run.error_summary or "").splitlines():
+        try:
+            diagnostic = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(diagnostic, dict):
+            products_created += int(diagnostic.get("product_created") is True)
+            prices_changed += int(diagnostic.get("price_changed") is True)
     return ExtractionRunOut(
         run_id=run.id,
         store_id=store.id,
@@ -76,6 +87,8 @@ def _run_output(db: Session, run: ExtractionRun, store: Store,
         finished_at=run.finished_at,
         records_seen=run.records_seen,
         observations_created=observations_created,
+        products_created=products_created,
+        prices_changed=prices_changed,
         error_summary=run.error_summary if include_diagnostics else None,
     )
 
@@ -89,7 +102,7 @@ def _coverage_fields(db: Session, store: Store, latest_run: ExtractionRun | None
         connector_name = extractor.name
         # The generic HTTPS parser is a fallback strategy, not proof of a
         # store-specific connector. Only named adapters can be enabled here.
-        connector_verified = not isinstance(extractor, PublicStoreExtractor)
+        connector_verified = getattr(extractor, "connector_verified", True)
     except ExtractionError:
         pass
 
@@ -413,7 +426,7 @@ def extract_managed_store(store_id: int = Path(gt=0), db: Session = Depends(get_
                 extractor = extractor_for_store(store)
             except ExtractionError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
-            if isinstance(extractor, PublicStoreExtractor):
+            if isinstance(extractor, PublicStoreExtractor) and not extractor.connector_verified:
                 raise HTTPException(
                     status_code=422,
                     detail="El parser HTML genérico no está verificado como conector funcional para este comercio.",

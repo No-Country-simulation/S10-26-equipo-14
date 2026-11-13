@@ -33,6 +33,8 @@ def test_daily_ingestion_runs_enabled_stores_and_persists_real_quote_records(tmp
         run_id = 45
         status = "SUCCESS"
         records_seen = 2
+        products_created = 1
+        prices_changed = 1
         observations_created = 2
         errors = ()
 
@@ -44,6 +46,8 @@ def test_daily_ingestion_runs_enabled_stores_and_persists_real_quote_records(tmp
         assert result["status"] == "SUCCESS"
         assert result["stores"][0]["store_id"] == store_id
         assert result["stores"][0]["observations_created"] == 2
+        assert result["stores"][0]["products_created"] == 1
+        assert result["stores"][0]["prices_changed"] == 1
         assert result["exchange_rates"][0]["quotes_created"] == 1
         with factory() as session:
             rate = session.scalar(select(ExchangeRate))

@@ -104,6 +104,8 @@ def run_daily_ingestion(
                         store_results.append({
                             "store_id": store_id, "run_id": result.run_id, "status": result.status,
                             "records_seen": result.records_seen,
+                            "products_created": result.products_created,
+                            "prices_changed": result.prices_changed,
                             "observations_created": result.observations_created,
                             "errors": list(result.errors),
                         })

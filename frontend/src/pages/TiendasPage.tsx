@@ -328,7 +328,7 @@ function StoreCard({ store, categories, priceHistory, priceHistoryLoading, price
           ) : extractResult ? (
             <>
               <p className="font-semibold">{runState(extractResult)}</p>
-              <p className="mt-1">Productos procesados: {extractResult.records_seen} · Observaciones generadas: {extractResult.observations_created}</p>
+              <p className="mt-1">Productos encontrados: {extractResult.records_seen} · Productos nuevos: {extractResult.products_created} · Precios modificados: {extractResult.prices_changed} · Observaciones guardadas: {extractResult.observations_created}</p>
               {extractResult.status !== 'SUCCESS' && extractResult.status !== 'succeeded' && extractResult.error_summary && (
                 <p className="mt-1 break-words text-rose-800">{extractResult.error_summary}</p>
               )}
@@ -360,7 +360,7 @@ function StoreCard({ store, categories, priceHistory, priceHistoryLoading, price
                         {observationsLoading === run.run_id ? 'Cargando…' : 'Consultar observaciones'}
                       </button>
                     </div>
-                    <p className="mt-1 text-xs text-slate-600">Productos procesados: {run.records_seen} · Observaciones generadas: {run.observations_created}</p>
+                    <p className="mt-1 text-xs text-slate-600">Encontrados: {run.records_seen} · Productos nuevos: {run.products_created} · Precios modificados: {run.prices_changed} · Observaciones: {run.observations_created}</p>
                     {run.status !== 'SUCCESS' && run.status !== 'succeeded' && run.error_summary && <p className="mt-1 break-words text-xs text-rose-700">{run.error_summary}</p>}
                     {observationsByRun[run.run_id] && (
                       observationsByRun[run.run_id].length ? (

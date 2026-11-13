@@ -14,6 +14,7 @@ from urllib.robotparser import RobotFileParser
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from app.extractors.base import ExtractionError, ProductSnapshot
+from app.extractors.http_content import decode_http_body
 from app.models import Store, StoreProduct
 
 _ALLOWED_HOSTS = {"fravega.com", "www.fravega.com"}
@@ -233,6 +234,7 @@ class FravegaExtractor:
             headers={
                 "User-Agent": _USER_AGENT,
                 "Accept": "text/html,application/xhtml+xml",
+                "Accept-Encoding": "gzip, deflate",
             },
         )
         opener = build_opener(_SameStoreRedirect())
@@ -252,11 +254,12 @@ class FravegaExtractor:
             raise ExtractionError("NETWORK_ERROR: no se pudo leer la página pública de producto.") from exc
         if len(body) > _MAX_RESPONSE_BYTES:
             raise ExtractionError("La respuesta superó el límite local de tamaño.")
-        charset = response.headers.get_content_charset() or "utf-8"
-        try:
-            return body.decode(charset, errors="replace")
-        except LookupError as exc:
-            raise ExtractionError("La página indicó una codificación no reconocida.") from exc
+        return decode_http_body(
+            body,
+            content_encoding=response.headers.get("Content-Encoding"),
+            charset=response.headers.get_content_charset(),
+            max_bytes=_MAX_RESPONSE_BYTES,
+        )
 
     def prepare(self) -> None:
         if self._robots is not None:

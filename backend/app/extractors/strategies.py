@@ -162,7 +162,8 @@ def _snapshot(name, amount, currency, url, data=None, availability=None):
         brand = None
     return ProductSnapshot(name, parse_price(amount), currency.upper(), url,
         external_id=_text(data.get("sku") or data.get("productID")),
-        brand=brand, model=_text(data.get("model")), is_available=available)
+        brand=brand, model=_text(data.get("model")),
+        category_name=_text(data.get("category")), is_available=available)
 
 
 def _offers(obj):

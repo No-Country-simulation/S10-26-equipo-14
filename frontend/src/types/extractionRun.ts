@@ -8,5 +8,7 @@ export interface ExtractionRun {
   finished_at: string | null
   records_seen: number
   observations_created: number
+  products_created: number
+  prices_changed: number
   error_summary: string | null
 }

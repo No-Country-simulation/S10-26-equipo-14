@@ -1,29 +1,29 @@
-name: Refresh live market data
+name: Daily real market ingestion
 
 on:
-  push:
-    branches: [develop]
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "0 12 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  refresh-usd-ars:
+  ingest-real-market-data:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 20
+    env:
+      PRICESCOPE_ADMIN_API_TOKEN: ${{ secrets.PRICESCOPE_ADMIN_API_TOKEN }}
     steps:
-      - name: Refresh official USD/ARS quote
+      - name: Require the protected backend credential
         run: |
-          curl --fail --silent --show-error --max-time 25 \
-            "https://pricescope-api.onrender.com/api/v1/exchange-rates?rate_type=official&limit=1"
-      - name: Refresh parallel USD/ARS quote
+          if [ -z "$PRICESCOPE_ADMIN_API_TOKEN" ]; then
+            echo "::error::Configure repository secret PRICESCOPE_ADMIN_API_TOKEN with the same value as Render ADMIN_API_TOKEN."
+            exit 1
+          fi
+      - name: Run authorized daily extraction and quote collection
         run: |
-          curl --fail --silent --show-error --max-time 25 \
-            "https://pricescope-api.onrender.com/api/v1/exchange-rates?rate_type=parallel&limit=1"
-      - name: Verify live cross-store price comparisons
-        run: |
-          curl --fail --silent --show-error --max-time 25 \
-            "https://pricescope-api.onrender.com/api/v1/comparisons?limit=10"
+          curl --fail --silent --show-error --max-time 900 \
+            --request POST \
+            --header "X-Admin-API-Token: $PRICESCOPE_ADMIN_API_TOKEN" \
+            "https://pricescope-api.onrender.com/api/v1/management/ingestion/daily"
