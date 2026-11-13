@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.main import app
 from app.models import Category, ExtractionRun, PriceObservation, Product, Store, StoreProduct
 from app.extractors.base import ProductSnapshot
-from app.extractors.public_store import PublicStoreExtractor
+from app.extractors.verified_stores import CredicoopExtractor
 from app.extractors.strategies import parse_html_product
 from app.extractors import extractor_for_store
 from app.services.extraction import run_store_extraction
@@ -18,11 +18,12 @@ from app.services.extraction import run_store_extraction
 class FakeExtractor:
     name = "Extractor sintético de pruebas"
 
-    def __init__(self, *, fail_on: set[int] | None = None, blocked_on: set[int] | None = None, barcode: str | None = "4006381333931"):
+    def __init__(self, *, fail_on: set[int] | None = None, blocked_on: set[int] | None = None, barcode: str | None = "4006381333931", amount: Decimal = Decimal("1250.50")):
         self.fail_on = fail_on or set()
         self.blocked_on = blocked_on or set()
         self.calls: list[int] = []
         self.barcode = barcode
+        self.amount = amount
 
     def supports(self, store):
         return True
@@ -38,7 +39,7 @@ class FakeExtractor:
             raise ValueError("fallo de fixture sintética")
         return ProductSnapshot(
             name=f"Producto ficticio {listing.id}",
-            amount=Decimal("1250.50"),
+            amount=self.amount,
             currency="ARS",
             source_url=listing.product_url,
             external_id=f"fixture-{listing.id}",
@@ -86,6 +87,8 @@ def test_run_persists_canonical_product_listing_price_and_run(client):
     assert result.status == "SUCCESS"
     assert result.records_seen == 1
     assert result.observations_created == 1
+    assert result.products_created == 1
+    assert result.prices_changed == 0
     listing = session.get(StoreProduct, listings[0].id)
     product = session.get(Product, listing.product_id)
     observation = session.scalar(select(PriceObservation))
@@ -113,6 +116,50 @@ def test_same_run_timestamp_does_not_duplicate_price_history(client):
     assert first.observations_created == 1
     assert retry.observations_created == 0
     assert count == 1
+    session.close()
+
+
+def test_repeated_unchanged_run_same_day_keeps_one_daily_observation(client):
+    session = _session()
+    store, _ = _make_store(session)
+    first_time = datetime(2026, 1, 1, 8, tzinfo=timezone.utc)
+    second_time = datetime(2026, 1, 1, 18, tzinfo=timezone.utc)
+
+    first = run_store_extraction(session, store.id, FakeExtractor(), started_at=first_time)
+    retry = run_store_extraction(session, store.id, FakeExtractor(), started_at=second_time)
+
+    count = session.scalar(select(func.count()).select_from(PriceObservation))
+    assert first.products_created == 1
+    assert first.observations_created == 1
+    assert retry.records_seen == 1
+    assert retry.products_created == 0
+    assert retry.prices_changed == 0
+    assert retry.observations_created == 0
+    assert count == 1
+    session.close()
+
+
+def test_price_change_same_day_appends_a_real_observation(client):
+    session = _session()
+    store, _ = _make_store(session)
+    first_time = datetime(2026, 1, 1, 8, tzinfo=timezone.utc)
+    changed_time = datetime(2026, 1, 1, 18, tzinfo=timezone.utc)
+
+    run_store_extraction(session, store.id, FakeExtractor(), started_at=first_time)
+    changed = run_store_extraction(
+        session,
+        store.id,
+        FakeExtractor(amount=Decimal("1300.00")),
+        started_at=changed_time,
+    )
+
+    observations = session.scalars(
+        select(PriceObservation).order_by(PriceObservation.observed_at)
+    ).all()
+    assert len(observations) == 2
+    assert observations[-1].amount == Decimal("1300.00")
+    assert changed.prices_changed == 1
+    assert changed.observations_created == 1
     session.close()
 
 
@@ -252,8 +299,9 @@ def test_credicoop_fixture_flows_through_general_parser_service_and_observation_
     store = Store(name="Tienda Credicoop fixture", base_url="https://tiendacredicoop.coop", country="Argentina")
     session.add(store)
     session.flush()
-    assert isinstance(extractor_for_store(store), PublicStoreExtractor)
+    assert isinstance(extractor_for_store(store), CredicoopExtractor)
     listing = StoreProduct(
+        store=store,
         store_id=store.id,
         product_url=product_url,
         product_name=parsed.name,
@@ -268,7 +316,7 @@ def test_credicoop_fixture_flows_through_general_parser_service_and_observation_
         assert url == product_url
         return html
 
-    extractor = PublicStoreExtractor(get_text=fixture_fetch, minimum_interval_seconds=0)
+    extractor = CredicoopExtractor(get_text=fixture_fetch, minimum_interval_seconds=0)
     result = run_store_extraction(session, store.id, extractor)
     session.refresh(listing)
     product = session.get(Product, listing.product_id)

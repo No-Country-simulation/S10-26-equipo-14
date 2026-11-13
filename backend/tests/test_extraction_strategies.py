@@ -42,13 +42,14 @@ def test_configurable_simple_html_selectors():
 
 def test_page_blocked_state_is_preserved_without_price():
     from app.extractors.public_store import PublicStoreExtractor
-    from app.models import StoreProduct
+    from app.models import Store, StoreProduct
 
     def blocked(_url):
         raise ExtractionError("BLOCKED: HTTP 403")
 
     extractor = PublicStoreExtractor(get_text=blocked, minimum_interval_seconds=0)
-    listing = StoreProduct(product_url="https://shop.test/item", product_name="TV", currency="ARS")
+    store = Store(name="Tienda fixture", base_url="https://shop.test")
+    listing = StoreProduct(store=store, product_url="https://shop.test/item", product_name="TV", currency="ARS")
     with pytest.raises(ExtractionError, match="BLOCKED"):
         extractor.extract(listing)
 

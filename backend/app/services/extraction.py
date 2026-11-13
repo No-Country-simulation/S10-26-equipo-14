@@ -22,6 +22,8 @@ class ExtractionResult:
     status: str
     records_seen: int
     observations_created: int
+    products_created: int
+    prices_changed: int
     errors: tuple[str, ...]
 
 
@@ -57,7 +59,7 @@ def _associate_product(
     session: Session,
     listing: StoreProduct,
     snapshot: ProductSnapshot,
-) -> None:
+) -> bool:
     category_id = _category_id(session, snapshot.category_name)
     product = session.get(Product, listing.product_id) if listing.product_id else None
 
@@ -69,7 +71,8 @@ def _associate_product(
     if product is None and snapshot.barcode:
         product = session.scalar(select(Product).where(Product.barcode == snapshot.barcode))
 
-    if product is None:
+    product_created = product is None
+    if product_created:
         product = Product(
             name=snapshot.name,
             brand=snapshot.brand,
@@ -106,6 +109,20 @@ def _associate_product(
         )
         if duplicate_external_id is None:
             listing.external_id = snapshot.external_id
+
+    return product_created
+
+
+def _same_observation_values(observation: PriceObservation, snapshot: ProductSnapshot) -> bool:
+    return (
+        observation.amount == snapshot.amount
+        and observation.promotional_price == snapshot.promotional_price
+        and observation.currency == snapshot.currency.upper()
+        and observation.is_available == snapshot.is_available
+        and observation.observed_package_quantity == snapshot.observed_package_quantity
+        and observation.observed_package_unit == snapshot.observed_package_unit
+        and observation.observed_package_count == snapshot.observed_package_count
+    )
 
 
 def run_store_extraction(
@@ -148,6 +165,8 @@ def run_store_extraction(
     diagnostics: list[dict[str, object]] = []
     records_seen = 0
     observations_created = 0
+    products_created = 0
+    prices_changed = 0
 
     try:
         extractor.prepare()
@@ -169,14 +188,6 @@ def run_store_extraction(
                 if listing is None:
                     raise ValueError("La publicación dejó de estar disponible durante la ejecución.")
                 snapshot = extractor.extract(listing)
-                diagnostics.append({
-                    "url": listing.product_url,
-                    "http_status": getattr(extractor, "last_http_status", None),
-                    "content_type": getattr(extractor, "last_content_type", None),
-                    "format": snapshot.extraction_format,
-                    "product": snapshot.name,
-                    "currency": snapshot.currency,
-                })
                 if snapshot.source_url != listing.product_url:
                     raise ValueError("UNSUPPORTED: la URL de origen no coincide con la publicación consultada.")
                 amount = normalize_decimal(snapshot.amount)
@@ -221,7 +232,18 @@ def run_store_extraction(
                     session.rollback()
                     continue
 
-                _associate_product(session, listing, snapshot)
+                previous_observation = session.scalar(
+                    select(PriceObservation)
+                    .where(PriceObservation.store_product_id == listing.id)
+                    .order_by(PriceObservation.observed_at.desc(), PriceObservation.id.desc())
+                    .limit(1)
+                )
+                product_created = _associate_product(session, listing, snapshot)
+                price_changed = previous_observation is not None and (
+                    previous_observation.amount != amount
+                    or previous_observation.promotional_price != promotional_price
+                    or previous_observation.currency != snapshot.currency.upper()
+                )
                 raw_price = RawPrice(
                     amount=amount,
                     promotional_price=promotional_price,
@@ -233,9 +255,37 @@ def run_store_extraction(
                     is_available=snapshot.is_available,
                     observed_at=started_at,
                 )
-                session.add(persist_price(session, listing.id, raw_price))
+                day_start = started_at.replace(hour=0, minute=0, second=0, microsecond=0)
+                latest_today = session.scalar(
+                    select(PriceObservation)
+                    .where(
+                        PriceObservation.store_product_id == listing.id,
+                        PriceObservation.observed_at >= day_start,
+                        PriceObservation.observed_at < started_at,
+                    )
+                    .order_by(PriceObservation.observed_at.desc(), PriceObservation.id.desc())
+                    .limit(1)
+                )
+                observation_created = not (
+                    latest_today is not None and _same_observation_values(latest_today, snapshot)
+                )
+                if observation_created:
+                    session.add(persist_price(session, listing.id, raw_price))
                 session.commit()
-                observations_created += 1
+                products_created += int(product_created)
+                prices_changed += int(price_changed)
+                observations_created += int(observation_created)
+                diagnostics.append({
+                    "url": listing.product_url,
+                    "http_status": getattr(extractor, "last_http_status", None),
+                    "content_type": getattr(extractor, "last_content_type", None),
+                    "format": snapshot.extraction_format,
+                    "product": snapshot.name,
+                    "currency": snapshot.currency,
+                    "product_created": product_created,
+                    "price_changed": price_changed,
+                    "observation_created": observation_created,
+                })
             except Exception as exc:  # keep valid listings even if one page is malformed
                 session.rollback()
                 errors.append(f"Publicación {listing_id}: {exc}")
@@ -277,5 +327,7 @@ def run_store_extraction(
         status=status,
         records_seen=records_seen,
         observations_created=observations_created,
+        products_created=products_created,
+        prices_changed=prices_changed,
         errors=tuple(errors),
     )

@@ -13,4 +13,6 @@ class ExtractionRunOut(BaseModel):
     finished_at: datetime | None
     records_seen: int
     observations_created: int
+    products_created: int
+    prices_changed: int
     error_summary: str | None

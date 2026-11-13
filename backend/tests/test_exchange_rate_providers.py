@@ -11,21 +11,20 @@ from app.services.exchange_rate_providers import BcraOfficialProvider, DolarApiB
 from app.services.ingestion import persist_quotes
 
 
-def test_bcra_provider_uses_latest_official_minorista_selling_value():
+def test_bcra_provider_uses_current_official_usd_ars_quote():
     provider = BcraOfficialProvider(get_json=lambda _url: {
         "status": 200,
-        "results": [
-            {"idVariable": 4, "descripcion": "Tipo de Cambio Minorista promedio vendedor", "fecha": "2026-11-10", "valor": 1400.5},
-            {"idVariable": 4, "descripcion": "Tipo de Cambio Minorista promedio vendedor", "fecha": "2026-11-11", "valor": 1412.25},
-            {"idVariable": 5, "descripcion": "Another variable", "fecha": "2026-11-12", "valor": 9999},
-        ],
+        "results": {"fecha": "2026-11-12", "detalle": [
+            {"codigoMoneda": "USD", "tipoCotizacion": 1412.25},
+            {"codigoMoneda": "EUR", "tipoCotizacion": 1600},
+        ]},
     })
     quote, = provider.fetch()
     assert quote.rate == Decimal("1412.25")
     assert quote.rate_type == "official"
     assert quote.rate_side == "reference"
-    assert quote.source == "BCRA Principales Variables"
-    assert quote.observed_at == datetime(2026, 11, 11, tzinfo=timezone.utc)
+    assert quote.source == "BCRA Estadísticas Cambiarias"
+    assert quote.observed_at == datetime(2026, 11, 12, tzinfo=timezone.utc)
 
 
 def test_parallel_provider_preserves_buy_sell_and_published_timestamp():

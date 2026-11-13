@@ -42,10 +42,10 @@ def _decimal(value: object) -> Decimal:
 
 
 class BcraOfficialProvider:
-    """Official minorista USD selling quote published by the BCRA API."""
+    """Official USD/ARS reference quote from the current BCRA FX API."""
 
-    name = "BCRA Principales Variables"
-    url = "https://api.bcra.gob.ar/estadisticas/v2.0/principalesvariables"
+    name = "BCRA Estadísticas Cambiarias"
+    url = "https://api.bcra.gob.ar/estadisticascambiarias/v1.0/Cotizaciones"
 
     def __init__(self, get_json=None) -> None:
         self._get_json = get_json or _read_json
@@ -54,23 +54,18 @@ class BcraOfficialProvider:
         payload = self._get_json(self.url)
         if not isinstance(payload, dict) or payload.get("status") != 200:
             raise ValueError("BCRA returned an unexpected response.")
-        rows = payload.get("results")
-        if not isinstance(rows, list):
-            raise ValueError("BCRA response is missing results.")
-        candidates = [
-            row for row in rows
-            if isinstance(row, dict)
-            and row.get("idVariable") == 4
-            and "Tipo de Cambio Minorista" in str(row.get("descripcion", ""))
-            and "vendedor" in str(row.get("descripcion", "")).casefold()
-        ]
+        results = payload.get("results")
+        if not isinstance(results, dict) or not isinstance(results.get("detalle"), list):
+            raise ValueError("BCRA response is missing currency details.")
+        candidates = [row for row in results["detalle"]
+                      if isinstance(row, dict) and row.get("codigoMoneda") == "USD"]
         if not candidates:
-            raise ValueError("BCRA response has no official minorista selling rate (variable 4).")
-        row = max(candidates, key=lambda item: str(item.get("fecha", "")))
-        observed_day = date.fromisoformat(str(row["fecha"]))
+            raise ValueError("BCRA response has no USD/ARS quote.")
+        row = candidates[0]
+        observed_day = date.fromisoformat(str(results["fecha"]))
         observed_at = datetime.combine(observed_day, time.min, tzinfo=timezone.utc)
         return (RawQuote(
-            rate=_decimal(row.get("valor")),
+            rate=_decimal(row.get("tipoCotizacion")),
             observed_at=observed_at,
             rate_type="official",
             rate_side="reference",

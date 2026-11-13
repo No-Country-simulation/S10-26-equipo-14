@@ -8,6 +8,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from urllib.robotparser import RobotFileParser
 
 from app.extractors.base import ExtractionError, ProductSnapshot
+from app.extractors.http_content import decode_http_body
 from app.extractors.strategies import parse_html_product
 from app.models import Store, StoreProduct
 
@@ -17,6 +18,7 @@ _MAX = 5 * 1024 * 1024
 
 class PublicStoreExtractor:
     name = "Public HTML strategies"
+    connector_verified = False
 
     def __init__(self, *, timeout_seconds: float = 15, minimum_interval_seconds: float = 1.5,
                  get_text=None, sleep=time.sleep, selectors: dict[str, str] | None = None):
@@ -53,7 +55,11 @@ class PublicStoreExtractor:
                     raise HTTPError(newurl, code, "Redirect outside registered host refused", headers, fp)
                 return super().redirect_request(req, fp, code, msg, headers, newurl)
         try:
-            request = Request(url, headers={"User-Agent": _UA, "Accept": "text/html,application/xhtml+xml"})
+            request = Request(url, headers={
+                "User-Agent": _UA,
+                "Accept": "text/html,application/xhtml+xml",
+                "Accept-Encoding": "gzip, deflate",
+            })
             with build_opener(SameHost()).open(request, timeout=self.timeout_seconds) as response:
                 self.last_http_status = response.status
                 self.last_content_type = response.headers.get_content_type()
@@ -62,7 +68,12 @@ class PublicStoreExtractor:
                     raise ExtractionError("UNSUPPORTED: tipo de contenido no HTML.")
                 body = response.read(_MAX + 1)
                 if len(body) > _MAX: raise ExtractionError("UNSUPPORTED: respuesta demasiado grande.")
-                return body.decode(response.headers.get_content_charset() or "utf-8", errors="replace")
+                return decode_http_body(
+                    body,
+                    content_encoding=response.headers.get("Content-Encoding"),
+                    charset=response.headers.get_content_charset(),
+                    max_bytes=_MAX,
+                )
         except HTTPError as exc:
             self.last_http_status = exc.code
             self.last_content_type = exc.headers.get_content_type() if exc.headers else None
@@ -89,6 +100,9 @@ class PublicStoreExtractor:
         if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
             raise ExtractionError("UNSUPPORTED: se requiere URL HTTPS pública.")
         host = parsed.hostname
+        registered_host = urlsplit(listing.store.base_url).hostname if listing.store else None
+        if registered_host != host:
+            raise ExtractionError("UNSUPPORTED: la URL del producto no coincide con el dominio registrado.")
         if not self._allowed(listing.product_url, host):
             raise ExtractionError("BLOCKED: robots.txt no autoriza esta página.")
         html = self._fetch(listing.product_url, host)

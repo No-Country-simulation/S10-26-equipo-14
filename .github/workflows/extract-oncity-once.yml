@@ -1,10 +1,6 @@
 name: Retry On City product extraction
 
 on:
-  push:
-    branches: [develop]
-    paths:
-      - ".github/workflows/extract-oncity-once.yml"
   workflow_dispatch:
 
 permissions:
@@ -14,9 +10,15 @@ jobs:
   extract-oncity:
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    env:
+      PRICESCOPE_ADMIN_API_TOKEN: ${{ secrets.PRICESCOPE_ADMIN_API_TOKEN }}
     steps:
+      - name: Require the protected backend credential
+        run: |
+          test -n "$PRICESCOPE_ADMIN_API_TOKEN" || { echo "::error::Configure PRICESCOPE_ADMIN_API_TOKEN with the Render ADMIN_API_TOKEN value."; exit 1; }
       - name: Extract the updated public On City product page
         run: |
           curl --fail --silent --show-error --max-time 90 \
             --request POST \
+            --header "X-Admin-API-Token: $PRICESCOPE_ADMIN_API_TOKEN" \
             "https://pricescope-api.onrender.com/api/v1/management/stores/11/extract"

@@ -30,6 +30,7 @@ EXPECTED_MUTATIONS = {
     ("POST", "/api/v1/management/stores/{store_id}/analyze"),
     ("POST", "/api/v1/management/stores/{store_id}/extract"),
     ("POST", "/api/v1/management/stores/{store_id}/store-products"),
+    ("POST", "/api/v1/management/ingestion/daily"),
     ("PUT", "/api/v1/management/stores/{store_id}/monitoring"),
 }
 
@@ -261,9 +262,10 @@ def test_production_blocks_every_registered_mutation_without_database_changes(wr
     assert snapshot_database(session_scope) == before
 
 
-def test_production_mutations_remain_protected_when_an_admin_token_is_configured(write_policy_context):
+def test_production_mutations_remain_protected_when_an_admin_token_is_configured(write_policy_context, monkeypatch):
     make_client, session_scope = write_policy_context
     seed_public_rows(session_scope)
+    monkeypatch.setattr("app.commands.daily_ingestion.run_daily_ingestion", lambda: {"status": "SUCCESS"})
     before = snapshot_database(session_scope)
     api, client = make_client("production", False, "server-side-test-token")
     mutations = {
