@@ -231,14 +231,14 @@ export default function HomePage() {
     ["BLOCKED", "NETWORK_ERROR", "RATE_LIMITED", "PRODUCT_NOT_FOUND", "PRICE_NOT_FOUND", "PARTIAL_SUCCESS"].includes(store.last_extraction_status))
 
   return (
-    <section className="mx-auto max-w-7xl space-y-8 px-4 py-8">
+    <section className="mx-auto max-w-7xl space-y-7 px-4 py-6 sm:px-6 sm:py-8">
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="mb-2 inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">Muestra observada · últimos {PERIOD_DAYS} días</p>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Inteligencia de precios</h1>
+          <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-[#0b5576]"><span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />Muestra observada · últimos {PERIOD_DAYS} días</p>
+          <h1 className="text-3xl font-bold tracking-tight text-[#0b2e50] sm:text-4xl">Inteligencia de precios</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-600">Indicadores descriptivos de registros observados por PriceScope. No representan IPC oficial ni inflación general del mercado.</p>
         </div>
-        <button type="button" onClick={() => setRetry((value) => value + 1)} className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Actualizar datos</button>
+        <button type="button" onClick={() => setRetry((value) => value + 1)} className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-[#0b2e50] shadow-sm hover:border-cyan-300 hover:bg-cyan-50">Actualizar datos</button>
       </header>
 
       {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><p>{error}</p><button type="button" onClick={() => setRetry((value) => value + 1)} className="mt-2 font-semibold underline">Reintentar</button></div>}
@@ -256,7 +256,7 @@ export default function HomePage() {
       )}
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_26px_-20px_rgba(8,47,73,0.45)] sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><h2 className="font-semibold text-slate-900">Evolución de precios</h2><p className="mt-1 text-xs text-slate-500">Última observación diaria por tienda · moneda original · {period.start.slice(0, 10)} a {period.end.slice(0, 10)}</p></div>
             <div className="flex gap-2">
@@ -269,8 +269,8 @@ export default function HomePage() {
           <p className="mt-2 text-xs text-slate-500">{selectedProduct?.name ?? "Elige un producto"} · {history?.rows.length ?? 0} observaciones · origen: API de PriceScope</p>
           {priceModule.status === "loading" ? <div className="flex h-64 items-center justify-center text-sm text-slate-500">Cargando series reales…</div> : priceModule.status === "error" ? <div role="alert" className="flex h-64 items-center justify-center rounded-lg bg-rose-50 p-6 text-center text-sm text-rose-800">Error de API: {priceModule.error}</div> : priceModule.status === "empty" || !history || history.series.length === 0 ? <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">{priceModule.status === "empty" ? "Sin observaciones en este período." : "Historial insuficiente: se requieren observaciones en al menos dos fechas para una tienda."} No se interpolan fechas faltantes.</div> : <div className="mt-4 h-64">
             <ResponsiveContainer width="100%" height="100%"><LineChart data={history.chartData} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="date" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} tickFormatter={(value: number) => value.toLocaleString("es-AR")} /><Tooltip formatter={(value) => [`${currency} ${Number(value).toLocaleString("es-AR", { maximumFractionDigits: 2 })}`, "Precio"]} /><Legend />
-              {history.series.map(({ store }) => <Line key={store.id} dataKey={`store-${store.id}`} name={store.name} type="linear" strokeWidth={2} stroke={`hsl(${(store.id * 67) % 360} 62% 45%)`} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} />)}
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="date" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={{ stroke: "#cbd5e1" }} tickLine={false} /><YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} tickFormatter={(value: number) => value.toLocaleString("es-AR")} /><Tooltip contentStyle={{ borderRadius: 12, borderColor: "#cbd5e1", boxShadow: "0 8px 24px #0b2e501a" }} formatter={(value) => [`${currency} ${Number(value).toLocaleString("es-AR", { maximumFractionDigits: 2 })}`, "Precio"]} /><Legend />
+              {history.series.map(({ store }, index) => <Line key={store.id} dataKey={`store-${store.id}`} name={store.name} type="linear" strokeWidth={2.5} stroke={["#0891b2", "#2563eb", "#0f766e", "#7c3aed", "#ea580c"][index % 5]} dot={false} activeDot={{ r: 5 }} connectNulls={false} />)}
             </LineChart></ResponsiveContainer>
           </div>}
           {history && <>
@@ -287,8 +287,8 @@ export default function HomePage() {
           <div><h2 className="font-semibold text-slate-900">Cotización USD/ARS</h2><p className="mt-1 text-xs text-slate-500">Oficial referencia frente a paralelo venta · ARS por USD · {data.rates.filter((rate) => !/demo|synthetic|sint[eé]tic/i.test(rate.source)).length} cotizaciones</p></div>
           {rateModule.status === "loading" ? <div className="flex h-64 items-center justify-center text-sm text-slate-500">Cargando cotizaciones…</div> : rateModule.status === "error" ? <div role="alert" className="flex h-64 items-center justify-center rounded-lg bg-rose-50 p-6 text-center text-sm text-rose-800">Error de API: {rateModule.error}</div> : rateModule.status === "empty" || (!officialRates.length && !parallelRates.length) ? <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">Sin cotizaciones reales para este período.</div> : officialRates.length < 2 && parallelRates.length < 2 ? <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">Historial insuficiente: una sola fecha no demuestra evolución cambiaria.</div> : <div className="mt-4 h-64">
             <ResponsiveContainer width="100%" height="100%"><LineChart data={fxData} margin={{ top: 8, right: 16, left: 4, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="date" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} tickFormatter={(value: number) => value.toLocaleString("es-AR")} /><Tooltip formatter={(value, name) => [`ARS ${Number(value).toLocaleString("es-AR", { maximumFractionDigits: 2 })}`, name]} /><Legend />
-              <Line dataKey="official" name="Oficial · referencia" stroke="#4f46e5" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} /><Line dataKey="parallel" name="Paralelo · venta" stroke="#e11d48" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="date" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={{ stroke: "#cbd5e1" }} tickLine={false} /><YAxis tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} tickFormatter={(value: number) => value.toLocaleString("es-AR")} /><Tooltip contentStyle={{ borderRadius: 12, borderColor: "#cbd5e1", boxShadow: "0 8px 24px #0b2e501a" }} formatter={(value, name) => [`ARS ${Number(value).toLocaleString("es-AR", { maximumFractionDigits: 2 })}`, name]} /><Legend />
+              <Line dataKey="official" name="Oficial · referencia" stroke="#0891b2" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} connectNulls={false} /><Line dataKey="parallel" name="Paralelo · venta" stroke="#2563eb" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} connectNulls={false} />
             </LineChart></ResponsiveContainer>
           </div>}
           <p className="mt-2 text-xs text-slate-500">Última cotización: {loading ? "…" : latestFx ? `${latestFx.source} · ${formatDate(latestFx.observed_at)}` : "Sin datos"}. Las fuentes DEMO se excluyen.</p>
@@ -296,7 +296,7 @@ export default function HomePage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
+        <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_26px_-20px_rgba(8,47,73,0.45)] sm:p-6 xl:col-span-2">
           <h2 className="font-semibold text-slate-900">Comparativa entre comercios</h2><p className="mt-1 text-xs text-slate-500">Mismo producto canónico y moneda · última observación disponible por publicación · {data.comparisons.length} productos comparables.</p>
           {comparisonModule.status === "loading" ? <p className="py-10 text-center text-sm text-slate-500">Cargando comparativas…</p> : comparisonModule.status === "error" ? <p role="alert" className="py-10 text-center text-sm text-rose-800">Error de API: {comparisonModule.error}</p> : comparisonModule.status === "empty" || !data.comparisons.length ? <p className="py-10 text-center text-sm text-slate-500">Sin comparativas para este período; se requieren productos compartidos y moneda compatible.</p> : <div className="mt-4 space-y-3">{data.comparisons.slice(0, 8).map((item) => <article key={item.product_id} className="rounded-lg border border-slate-100 p-3">
             <div className="flex flex-wrap justify-between gap-2"><strong className="text-sm text-slate-800">{item.product_name}</strong><span className="text-xs text-slate-500">{item.currency} · {item.prices.length} precios · diferencia {item.spread_percent === null ? "—" : `${Number(item.spread_percent).toLocaleString("es-AR", { maximumFractionDigits: 2 })}%`}</span></div>
@@ -304,7 +304,7 @@ export default function HomePage() {
           </article>)}</div>}
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_26px_-20px_rgba(8,47,73,0.45)] sm:p-6">
           <h2 className="font-semibold text-slate-900">Productos por categoría</h2><p className="mt-1 text-xs text-slate-500">Productos reales con precio observado.</p>
           {categoryModule.status === "loading" ? <p className="py-8 text-sm text-slate-500">Cargando…</p> : categoryModule.status === "error" ? <p role="alert" className="mt-6 text-sm text-rose-800">Error de API: {categoryModule.error}</p> : categoryModule.status === "empty" || !categoryCounts.length ? <p className="mt-6 text-sm text-slate-500">Sin productos con precio en estas categorías.</p> : <ul className="mt-4 space-y-3">{categoryCounts.map(({ category, count }) => <li key={category.id} className="flex justify-between gap-2 text-sm"><span>{category.name}</span><strong>{count}</strong></li>)}</ul>}
           <div className="mt-6 border-t border-slate-100 pt-4"><h3 className="text-sm font-semibold text-slate-800">Señales y extracciones</h3>{alertModule.status === "loading" ? <p className="mt-2 text-xs text-slate-500">Cargando alertas…</p> : alertModule.status === "error" ? <p role="alert" className="mt-2 text-xs text-rose-800">Error de API: {alertModule.error}</p> : <>
@@ -315,7 +315,7 @@ export default function HomePage() {
         </section>
       </div>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_26px_-20px_rgba(8,47,73,0.45)] sm:p-6">
         <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="font-semibold text-slate-900">Cobertura por tienda</h2><p className="mt-1 text-xs text-slate-500">La cobertura operativa requiere conector verificado y observaciones persistidas en una ejecución exitosa.</p></div><span className="text-xs text-slate-500">Último dato: {loading ? "…" : formatDate(lastObservation?.observed_at)}</span></div>
         {coverageModule.status === "loading" ? <p className="py-8 text-sm text-slate-500">Cargando cobertura…</p> : coverageModule.status === "error" ? <p role="alert" className="py-8 text-sm text-rose-800">Error de API: {coverageModule.error}</p> : coverageModule.status === "empty" || data.stores.length === 0 ? <p className="py-8 text-sm text-slate-500">Sin datos de cobertura.</p> : <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="py-2">Tienda</th><th>Estado del conector</th><th>Última ejecución</th><th>Observaciones</th><th>Último precio</th></tr></thead><tbody className="divide-y divide-slate-100">{data.stores.filter((store) => !store.name.startsWith("DEMO PriceScope ")).map((store) => {
           const latest = observations.filter((row) => listingById.get(row.store_product_id)?.store_id === store.id).reduce<PriceObservation | null>((found, row) => !found || Date.parse(row.observed_at) > Date.parse(found.observed_at) ? row : found, null)

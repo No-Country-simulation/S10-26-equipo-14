@@ -9,7 +9,7 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900">
+    <div className="flex min-h-screen flex-col bg-[#f4f7fb] text-slate-900">
       <TopBar onToggleSidebar={() => setSidebarOpen((prev) => !prev)} sidebarOpen={sidebarOpen} />
 
       <div className="flex flex-1 overflow-hidden relative">
@@ -22,7 +22,7 @@ export default function Layout() {
           />
         )}
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <main className="flex-1 w-full overflow-y-auto bg-slate-50">
+        <main className="flex-1 w-full overflow-y-auto bg-[#f4f7fb]">
           <div className="mx-auto max-w-6xl px-4 py-8">
             <Breadcrumbs />
             <Outlet />

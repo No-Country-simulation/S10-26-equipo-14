@@ -22,16 +22,16 @@ export default function MetricCard({
   return (
     <div
       className={cn(
-        "rounded-xl border border-slate-200 bg-white p-6 shadow-sm",
+        "group rounded-2xl border border-slate-200/80 border-t-[3px] border-t-cyan-500 bg-white p-5 shadow-[0_5px_20px_-14px_rgba(8,47,73,0.35)] transition-all hover:-translate-y-0.5 hover:shadow-md sm:p-6",
         className,
       )}
     >
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
             {title}
           </p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">
+          <p className="mt-2 text-3xl font-bold tracking-tight tabular-nums text-[#0b2e50]">
             {value}
           </p>
           {subtitle && (
