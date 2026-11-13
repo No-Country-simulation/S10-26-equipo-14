@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/geist';
 
 @theme {
   --color-background: hsl(0 0% 100%);
@@ -18,3 +19,19 @@
   --color-ring: hsl(221.2 83.2% 53.3%);
   --radius: 0.5rem;
 }
+
+:root {
+  font-family: 'Geist Variable', Geist, ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color-scheme: light;
+  background: #f4f7fb;
+}
+
+body { min-width: 320px; min-height: 100vh; margin: 0; background: #f4f7fb; }
+button, input, select { font: inherit; }
+button, a, input, select { transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease; }
+:focus-visible { outline: 3px solid #22d3ee; outline-offset: 2px; }
+::selection { background: #a5f3fc; color: #082f49; }

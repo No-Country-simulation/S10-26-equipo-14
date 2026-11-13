@@ -36,8 +36,8 @@ interface SidebarProps {
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${isActive
-      ? 'bg-indigo-600 text-white'
-      : 'text-slate-600 hover:bg-slate-200 hover:text-slate-900'}`
+      ? 'bg-[#0b2e50] text-white shadow-sm shadow-sky-950/20'
+      : 'text-slate-600 hover:bg-sky-50 hover:text-[#0b2e50]'}`
 
   return (
     <aside
@@ -46,7 +46,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       className={`fixed left-0 top-16 bottom-0 z-20 w-64 transform border-r border-slate-200 bg-white transition-transform duration-300 ease-in-out ${open ? 'translate-x-0' : '-translate-x-full'} md:static md:translate-x-0 md:shadow-none`}
     >
       <div className="flex h-16 items-center justify-between px-4 border-b border-slate-200">
-        <span className="text-xl font-bold tracking-tight text-slate-900">PriceScope</span>
+        <span className="text-xl font-bold tracking-tight text-[#0b2e50]">Price<span className="text-cyan-600">Scope</span></span>
         <button
           type="button"
           onClick={onClose}
