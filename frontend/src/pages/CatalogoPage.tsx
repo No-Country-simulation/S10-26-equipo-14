@@ -72,6 +72,7 @@ export default function CatalogoPage({
             search: normalizedSearch || undefined,
             start: dateBoundary(filters.dateFrom),
             end: dateBoundary(filters.dateTo, true),
+            verified_only: true,
           },
           controller.signal
         )

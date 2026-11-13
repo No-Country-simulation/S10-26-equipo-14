@@ -18,3 +18,11 @@ export function coverageLabel(status) {
 export function canExtractStore(store, canManage, busy = false) {
   return Boolean(canManage && !busy && store.is_active && store.connector_configured)
 }
+
+export function hasRecentVerifiedCoverage(store, now = Date.now()) {
+  if (!store?.is_active || !store.connector_available || !store.is_operational ||
+      store.coverage_status !== "operational" || store.last_extraction_status !== "SUCCESS" || !store.operational_at) return false
+  const observedAt = Date.parse(store.operational_at)
+  const age = now - observedAt
+  return Number.isFinite(age) && age >= 0 && age <= 48 * 60 * 60 * 1000
+}

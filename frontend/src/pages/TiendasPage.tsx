@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Activity, AlertCircle, Check, ChevronRight, CircleHelp, Globe2, History, LoaderCircle, Plus, Play, RefreshCw, Store as StoreIcon } from 'lucide-react'
 import { apiClient, ApiError, type CreateStoreProductInput } from '@/lib/api'
-import { canExtractStore, coverageLabel } from '@/lib/storeCoverage.js'
+import { canExtractStore, coverageLabel, hasRecentVerifiedCoverage } from '@/lib/storeCoverage.js'
 import type { Category } from '@/types/category'
 import type { CreateStoreInput, ManagedStore, StoreCategoryCandidate, StoreMonitoringInput } from '@/types/store'
 import type { ExtractionRun, PriceObservation } from '@/types'
@@ -419,6 +419,7 @@ export default function TiendasPage() {
   const [categoriesError, setCategoriesError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [retry, setRetry] = useState(0)
+  const visibleStores = canManage ? stores : stores.filter(hasRecentVerifiedCoverage)
 
   const load = useCallback(async (signal: AbortSignal) => {
     setStoresLoading(true)
@@ -558,15 +559,15 @@ export default function TiendasPage() {
 
       {storesLoading ? (
         <div className="flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white py-16 text-slate-600"><LoaderCircle className="h-5 w-5 animate-spin text-indigo-600" />Cargando tiendas registradas…</div>
-      ) : storesError && stores.length === 0 ? null : stores.length === 0 ? (
+      ) : storesError && stores.length === 0 ? null : visibleStores.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
           <StoreIcon className="mx-auto h-10 w-10 text-slate-400" />
-          <h2 className="mt-4 text-lg font-semibold text-slate-900">Todavía no hay tiendas registradas</h2>
-          <p className="mx-auto mt-2 max-w-lg text-sm text-slate-600">Agrega el sitio oficial de un comercio. PriceScope comprobará primero si cuenta con un analizador compatible.</p>
+          <h2 className="mt-4 text-lg font-semibold text-slate-900">{canManage ? 'Todavía no hay tiendas registradas' : 'No hay tiendas operativas con precios recientes'}</h2>
+          <p className="mx-auto mt-2 max-w-lg text-sm text-slate-600">{canManage ? 'Agrega el sitio oficial de un comercio. PriceScope comprobará primero si cuenta con un analizador compatible.' : 'Se muestran solo tiendas activas con conector específico, última extracción exitosa y precios persistidos en las últimas 48 horas.'}</p>
           <button type="button" disabled={!canManage} title={!canManage ? 'Introduce la clave de administración para habilitar esta acción.' : undefined} onClick={() => setShowForm(true)} className="mt-5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">Registrar la primera tienda</button>
         </div>
       ) : (
-        <div className="space-y-4">{stores.map((store) => <StoreCard key={store.id} store={store} categories={categories} canManage={canManage} adminToken={adminToken} onUpdated={updateStore} onReload={() => { void refreshStores() }} />)}</div>
+        <div className="space-y-4">{visibleStores.map((store) => <StoreCard key={store.id} store={store} categories={categories} canManage={canManage} adminToken={adminToken} onUpdated={updateStore} onReload={() => { void refreshStores() }} />)}</div>
       )}
     </section>
   )

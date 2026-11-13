@@ -127,3 +127,40 @@ test("exchange-rate requests include the required rate type", async () => {
   assert.equal(new URL(requestedUrls[0], "https://example.test").searchParams.get("rate_type"), "official")
   assert.equal(new URL(requestedUrls[1], "https://example.test").searchParams.get("rate_type"), "blue")
 })
+
+test("public catalogue requests only current verified listings", async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ""
+  globalThis.fetch = async (input) => {
+    requestedUrl = String(input)
+    return new Response(JSON.stringify({ items: [], total: 0, limit: 20, offset: 0, verified_only: true }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    })
+  }
+  try {
+    await apiClient.fetchProductsWithPrices({ limit: 20, offset: 0, verified_only: true })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  assert.equal(new URL(requestedUrl, "https://example.test").searchParams.get("verified_only"), "true")
+})
+
+test("older public management responses fail closed on missing coverage fields", async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(JSON.stringify([{
+    id: 2, name: "Frávega", base_url: "https://www.fravega.com", country: "AR", is_active: true,
+    created_at: "2026-11-12T00:00:00Z", integration_status: "configuration_required",
+    analyzer_key: null, analysis_message: null, analysis_candidates: [], last_analysis_at: null,
+    currency: "ARS", interval_hours: 24, monitoring_enabled: false, category_ids: [],
+    last_extraction_at: "2026-11-12T10:00:00Z", last_extraction_status: "SUCCESS",
+  }]), { status: 200, headers: { "Content-Type": "application/json" } })
+  try {
+    const [store] = await apiClient.fetchManagedStores()
+    assert.equal(store.last_extraction_status, "SUCCESS")
+    assert.equal(store.is_operational, false)
+    assert.equal(store.coverage_status, "connector_unverified")
+    assert.match(store.extraction_disabled_reason, /no publica datos de cobertura verificables/)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})

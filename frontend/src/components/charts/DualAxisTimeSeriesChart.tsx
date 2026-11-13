@@ -49,10 +49,9 @@ function formatAxisAmount(value: number) {
 }
 
 function formatDateLabel(value: string) {
-  const [year, month, day] = value.split('-').map(Number)
-  if (!year || !month || !day) return value
-  // Construct a local calendar date so YYYY-MM-DD is not shifted by the browser timezone.
-  return new Date(year, month - 1, day).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
 function ChartTooltip({ active, payload, hasPriceData, hasRateData, hasParallelRateData }: ChartTooltipProps) {
@@ -61,9 +60,9 @@ function ChartTooltip({ active, payload, hasPriceData, hasRateData, hasParallelR
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-900 shadow-md">
-      <div className="mb-1 font-medium text-slate-700">{formatDateLabel(point.date)}</div>
+      <div className="mb-1 font-medium text-slate-700">Fecha y hora: {formatDateLabel(point.date)}</div>
       {hasPriceData && point.price !== null && (
-        <div className="text-blue-700">Precio promedio: ARS {formatAmount(point.price)}</div>
+        <div className="text-blue-700">Precio observado: ARS {formatAmount(point.price)}</div>
       )}
       {hasRateData && point.rate !== null && (
         <div className="text-violet-700">Cotización USD/ARS: {formatAmount(point.rate)} ARS por USD</div>

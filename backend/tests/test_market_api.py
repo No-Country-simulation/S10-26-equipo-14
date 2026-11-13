@@ -254,6 +254,69 @@ def test_products_with_latest_prices_keeps_products_without_observations(client)
     assert by_name["Producto sin observación"]["latest_price"] is None
 
 
+def test_verified_catalog_requires_recent_available_price_from_latest_fravega_success(client):
+    from datetime import timedelta
+    from sqlalchemy import select
+    from app.models import ExtractionRun, PriceObservation, Product, Store, StoreProduct
+
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    with _manual_db_session() as session:
+        store = Store(name="Frávega", base_url="https://www.fravega.com", is_active=True)
+        product = Product(name="Notebook verificada")
+        session.add_all([store, product])
+        session.flush()
+        listing = StoreProduct(store_id=store.id, product_id=product.id,
+                               product_url="https://www.fravega.com/p/notebook",
+                               product_name=product.name)
+        run = ExtractionRun(source="fravega", store_id=store.id, status="SUCCESS", started_at=now)
+        session.add_all([listing, run])
+        session.flush()
+        session.add(PriceObservation(store_product_id=listing.id, amount="100.00", currency="ARS",
+                                     is_available=True, source_url=listing.product_url, observed_at=now))
+        session.commit()
+        product_id = product.id
+
+    response = client.get("/api/v1/products/paginated-with-prices", params={"verified_only": "true"})
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["verified_only"] is True
+    assert response.json()["items"][0]["id"] == product_id
+    assert response.json()["items"][0]["latest_price"]["is_available"] is True
+
+    with _manual_db_session() as session:
+        store = session.scalar(select(Store).where(Store.name == "Frávega"))
+        session.add(ExtractionRun(source="fravega", store_id=store.id, status="FAILED", started_at=now + timedelta(seconds=1)))
+        session.commit()
+    assert client.get("/api/v1/products/paginated-with-prices", params={"verified_only": "true"}).json()["total"] == 0
+
+
+def test_verified_catalog_excludes_stale_and_unavailable_prices(client):
+    from datetime import timedelta
+    from app.models import ExtractionRun, PriceObservation, Product, Store, StoreProduct
+
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    with _manual_db_session() as session:
+        store = Store(name="Frávega", base_url="https://www.fravega.com", is_active=True)
+        stale = Product(name="Notebook antigua")
+        unavailable = Product(name="Monitor agotado")
+        session.add_all([store, stale, unavailable])
+        session.flush()
+        old_time = now - timedelta(hours=49)
+        for product, at, available in ((stale, old_time, True), (unavailable, now, False)):
+            listing = StoreProduct(store_id=store.id, product_id=product.id,
+                                   product_url=f"https://www.fravega.com/p/{product.id}", product_name=product.name)
+            session.add(listing)
+            session.flush()
+            session.add(ExtractionRun(source="fravega", store_id=store.id, status="SUCCESS", started_at=at))
+            session.add(PriceObservation(store_product_id=listing.id, amount="100.00", currency="ARS",
+                                         is_available=available, observed_at=at))
+        session.commit()
+
+    response = client.get("/api/v1/products/paginated-with-prices", params={"verified_only": "true"})
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
+
+
 def test_product_by_id_returns_product_and_404_for_missing(client):
     from app.models import Product
 

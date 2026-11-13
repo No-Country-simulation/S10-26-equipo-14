@@ -8,3 +8,14 @@ export function canExtractStore(
   canManage: boolean,
   busy?: boolean,
 ): boolean
+export function hasRecentVerifiedCoverage(
+  store: {
+    is_active: boolean
+    connector_available: boolean
+    is_operational: boolean
+    coverage_status: CoverageStatus
+    last_extraction_status: string | null
+    operational_at: string | null
+  },
+  now?: number,
+): boolean

@@ -140,7 +140,10 @@ def test_production_get_endpoints_remain_public(write_policy_context):
             response = client.get(path)
             assert response.status_code == 200, (path, response.text)
             if "/paginated" in path:
-                assert set(response.json()) == {"items", "total", "limit", "offset"}
+                    expected_keys = {"items", "total", "limit", "offset"}
+                    if "paginated-with-prices" in path:
+                        expected_keys.add("verified_only")
+                    assert set(response.json()) == expected_keys
 
         private_response = client.get("/api/v1/store-products")
         assert private_response.status_code == 200

@@ -75,6 +75,7 @@ class PricedProductPageOut(BaseModel):
     total: int
     limit: int
     offset: int
+    verified_only: bool = False
 
 
 class StoreProductCreate(BaseModel):
