@@ -237,6 +237,37 @@ def test_accumulated_inflation_uses_period_endpoints_and_separates_fx():
         Base.metadata.drop_all(engine); engine.dispose()
 
 
+def test_accumulated_inflation_reports_true_zero_when_prices_and_fx_are_unchanged():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    start, end = datetime(2026, 11, 12, tzinfo=timezone.utc), datetime(2026, 11, 13, tzinfo=timezone.utc)
+    try:
+        with Session(engine) as session, session.begin():
+            product = Product(name="Producto sin variacion")
+            store = Store(name="Tienda real", base_url="https://market.test")
+            session.add_all([product, store]); session.flush()
+            listing = StoreProduct(store_id=store.id, product_id=product.id,
+                                   product_url="https://market.test/item", product_name=product.name)
+            session.add(listing); session.flush()
+            session.add_all([
+                PriceObservation(store_product_id=listing.id, amount="925", currency="ARS", observed_at=start),
+                PriceObservation(store_product_id=listing.id, amount="925", currency="ARS", observed_at=end),
+                ExchangeRate(source="BCRA", rate_type="official", rate_side="reference",
+                             rate="1500", observed_at=start),
+                ExchangeRate(source="BCRA", rate_type="official", rate_side="reference",
+                             rate="1500", observed_at=end),
+            ])
+        result = accumulated_inflation(session, start=start, end=end)
+        assert result["status"] == "available"
+        currency = result["currencies"][0]
+        assert Decimal(currency["inflation_percent"]) == 0
+        assert Decimal(currency["fx_variation_percent"]) == 0
+        assert result["products"][0]["listings"][0]["initial_observed_at"].replace(tzinfo=timezone.utc) == start
+        assert result["products"][0]["listings"][0]["final_observed_at"].replace(tzinfo=timezone.utc) == end
+    finally:
+        Base.metadata.drop_all(engine); engine.dispose()
+
+
 def test_accumulated_inflation_reports_insufficient_period_and_excludes_mixed_currency():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)

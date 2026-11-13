@@ -25,7 +25,7 @@ from app.models import (
 from app.schemas.extraction import ExtractionRunOut
 from app.schemas.catalog import ManagedStoreProductCreate, StoreProductOut
 from app.schemas.market import PriceObservationOut
-from app.schemas.store_management import MonitoringUpdate, StoreCreate, StoreManagementOut
+from app.schemas.store_management import MonitoringUpdate, StoreBaseURLUpdate, StoreCreate, StoreManagementOut
 from app.services.store_analysis import analyze_store
 from app.extractors import ExtractionError, extractor_for_store
 from app.extractors.fravega import FravegaExtractor
@@ -258,6 +258,41 @@ def list_managed_stores(request: Request, db: Session = Depends(get_db)):
     return safe_records
 
 
+@router.put("/{store_id}/base-url", response_model=StoreManagementOut,
+            dependencies=[Depends(require_admin_api_token)])
+def configure_verified_store_base_url(
+    payload: StoreBaseURLUpdate,
+    store_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+):
+    """Set a missing base URL only when it selects a verified connector."""
+    store = db.get(Store, store_id)
+    if store is None:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada.")
+    base_url = str(payload.base_url).rstrip("/")
+    if store.base_url:
+        if store.base_url.rstrip("/").casefold() != base_url.casefold():
+            raise HTTPException(status_code=409, detail="No se reemplaza una URL base ya configurada.")
+        return _find_record(db, store.id)
+    if db.scalar(select(Store.id).where(func.lower(Store.base_url) == base_url.lower())):
+        raise HTTPException(status_code=409, detail="Ese sitio ya est? registrado con otra tienda.")
+    candidate = Store(name=store.name, base_url=base_url, country=store.country)
+    try:
+        extractor = extractor_for_store(candidate)
+    except ExtractionError as exc:
+        raise HTTPException(status_code=422, detail="No hay un conector espec?fico para esa URL.") from exc
+    if not getattr(extractor, "connector_verified", False):
+        raise HTTPException(status_code=422, detail="La URL no corresponde a un conector verificado.")
+    store.base_url = base_url
+    try:
+        db.commit()
+        db.refresh(store)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="No se pudo configurar la URL base.") from exc
+    return _find_record(db, store.id)
+
+
 @router.post("", response_model=StoreManagementOut, status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(require_admin_api_token)])
 def create_managed_store(payload: StoreCreate, db: Session = Depends(get_db)):
@@ -307,6 +342,7 @@ def _validate_listing_url(store: Store, product_url: str) -> None:
         "cetrogar.com.ar",
         "tiendacredicoop.coop",
         "oncity.com",
+        "diaonline.supermercadosdia.com.ar",
     )
     retailer_host = _canonical_host(base.hostname)
     product_host = _canonical_host(page.hostname)

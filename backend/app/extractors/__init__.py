@@ -2,6 +2,7 @@
 
 from app.extractors.base import ExtractionError, ProductSnapshot, StoreExtractor
 from app.extractors.fravega import FravegaExtractor
+from app.extractors.dia_online import DiaOnlineExtractor
 from app.extractors.public_store import PublicStoreExtractor
 from app.extractors.verified_stores import (
     CetrogarExtractor,
@@ -19,6 +20,7 @@ def extractor_for_store(store) -> StoreExtractor:
         CetrogarExtractor(),
         CredicoopExtractor(),
         OnCityExtractor(),
+        DiaOnlineExtractor(),
     )
     matches = [adapter for adapter in adapters if adapter.supports(store)]
     if len(matches) > 1:
@@ -39,6 +41,7 @@ def extractor_for_store(store) -> StoreExtractor:
 __all__ = [
     "ExtractionError",
     "FravegaExtractor",
+    "DiaOnlineExtractor",
     "PublicStoreExtractor",
     "CetrogarExtractor",
     "CredicoopExtractor",

@@ -57,6 +57,32 @@ def test_explicit_development_store_management_writes_are_enabled(management_con
         assert session.scalar(select(Store).where(Store.name == "Example")) is not None
 
 
+def test_configure_missing_base_url_requires_a_verified_connector_and_is_idempotent(management_context):
+    client, factory = management_context
+    with factory() as session:
+        store = Store(name="Día Online", base_url="", country="AR", is_active=True)
+        session.add(store)
+        session.commit()
+        store_id = store.id
+
+    configured = client.put(f"/api/v1/management/stores/{store_id}/base-url", json={
+        "base_url": "https://diaonline.supermercadosdia.com.ar",
+    })
+    assert configured.status_code == 200, configured.text
+    assert configured.json()["connector_available"] is True
+    assert configured.json()["base_url"].rstrip("/") == "https://diaonline.supermercadosdia.com.ar"
+    assert client.put(f"/api/v1/management/stores/{store_id}/base-url", json={
+        "base_url": "https://diaonline.supermercadosdia.com.ar",
+    }).status_code == 200
+
+    unsupported = client.put(f"/api/v1/management/stores/{store_id}/base-url", json={
+        "base_url": "https://example.invalid",
+    })
+    assert unsupported.status_code == 409
+    with factory() as session:
+        assert session.get(Store, store_id).base_url == "https://diaonline.supermercadosdia.com.ar"
+
+
 def test_create_store_is_pending_and_duplicates_are_rejected(management_context):
     client, factory = management_context
     payload = {"name": "Example Store", "base_url": "https://example.com", "country": "AR", "currency": "ars"}

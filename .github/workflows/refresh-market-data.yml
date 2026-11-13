@@ -30,7 +30,7 @@ jobs:
       - name: Extract configured public retailer listings
         run: |
           failed=0
-          for store_id in 1 8 11; do
+          for store_id in 1 6 8 11; do
             listings=$(curl --fail --silent --show-error --max-time 45 \
               "https://pricescope-api.onrender.com/api/v1/management/stores/$store_id/store-products")
             listing_count=$(printf '%s' "$listings" | jq 'length')

@@ -9,6 +9,7 @@ import type { Category, ExchangeRate, PriceObservation, Store } from "@/types"
 import type { StoreProduct } from "@/types/storeProduct"
 
 const PAGE_LIMIT = 1000
+const REQUEST_TIMEOUT_MS = 20_000
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message
@@ -88,6 +89,7 @@ export default function DivisasPage() {
   React.useEffect(() => {
     const controller = new AbortController()
     let active = true
+    const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     void Promise.allSettled([
       apiClient.fetchStores(controller.signal),
       apiClient.fetchCategories(controller.signal),
@@ -105,10 +107,12 @@ export default function DivisasPage() {
         setFilterErrors(errors)
       })
       .finally(() => {
+        window.clearTimeout(timeoutId)
         if (active) setLoadingFilters(false)
       })
     return () => {
       active = false
+      window.clearTimeout(timeoutId)
       controller.abort()
     }
   }, [retry])
@@ -116,6 +120,7 @@ export default function DivisasPage() {
   React.useEffect(() => {
     const controller = new AbortController()
     let active = true
+    const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     const query = {
       store_id: filters.storeId ?? undefined,
       category_id: filters.categoryId ?? undefined,
@@ -141,10 +146,12 @@ export default function DivisasPage() {
         setSeriesErrors(errors)
       })
       .finally(() => {
+        window.clearTimeout(timeoutId)
         if (active) setLoadingSeries(false)
       })
     return () => {
       active = false
+      window.clearTimeout(timeoutId)
       controller.abort()
     }
   }, [filters.categoryId, filters.dateFrom, filters.dateTo, filters.search, filters.storeId, retry])
